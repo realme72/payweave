@@ -1,0 +1,62 @@
+[project]
+name = "payweave"
+version = "0.1.0"
+description = "Weave any payment gateway into one API, with AI that reads the docs and proves it got them right."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.9",
+]
+
+[project.entry-points."payweave.gateways"]
+razorpay = "payweave.gateways.razorpay:provider"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.168.5",
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.16.10",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "PL", "PT", "TRY", "DTZ"]
+ignore = ["PLR2004", "TRY003", "PLR0913"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "PLR2004"]  # fake test secrets are fine
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src", "tests"]
+# Protocols are used as runtime keys (registry.get(name, Refunder)); mypy flags
+# passing a Protocol as type[T] even though it is intended here.
+disable_error_code = ["type-abstract"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers -m 'not sandbox'"
+markers = ["sandbox: hits the real gateway test-mode API (needs keys in .env); run with -m sandbox"]
+
+[tool.coverage.run]
+branch = true
+source = ["payweave"]

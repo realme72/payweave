@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.env
+.env.*
+!.env.example
+
+# Third-party doc copies: re-create with `make docs-fetch` (index + hashes are committed)
+docs/sources/*/*
+!docs/sources/*/SNAPSHOT.tsv
+!docs/sources/*/urls.txt
+
+# Never commit key exports or local secrets
+*.csv
+*.pem
+*.key
