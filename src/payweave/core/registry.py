@@ -58,19 +58,6 @@ class GatewayRegistry:
             raise DuplicateGatewayError(gateway.name)
         self._gateways[gateway.name] = gateway
 
-    def replace(self, gateway: Gateway) -> Gateway:
-        """Swap an existing gateway on purpose (e.g. after key rotation).
-
-        The name must already be registered, so a typo can't add a stray
-        gateway. Returns the old instance so the caller can close it.
-        """
-        validate_gateway(gateway)
-        old = self._gateways.get(gateway.name)
-        if old is None:
-            raise GatewayNotFoundError(gateway.name)
-        self._gateways[gateway.name] = gateway
-        return old
-
     def unregister(self, name: str) -> None:
         if self._gateways.pop(name, None) is None:
             raise GatewayNotFoundError(name)

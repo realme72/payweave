@@ -90,19 +90,6 @@ def test_duplicate_instance_and_provider_rejected() -> None:
         factory.build_registry([spec, spec])
 
 
-def test_replace_swaps_on_purpose_and_returns_old() -> None:
-    factory = GatewayFactory([DummyProvider()])
-    registry = factory.build_registry(
-        [GatewaySpec(name="dummy", type="dummy", config={"api_key": "old"})]
-    )
-    old = registry.get("dummy", PaymentReader)
-    new = factory.create("dummy", {"api_key": "rotated"})
-    assert registry.replace(new) is old
-    assert registry.get("dummy", PaymentReader) is new
-    with pytest.raises(GatewayNotFoundError):  # replace never adds: a typo can't sneak in
-        registry.replace(factory.create("dummy", {"api_key": "x"}, name="dumy"))
-
-
 def test_unknown_type() -> None:
     with pytest.raises(UnknownGatewayTypeError):
         GatewayFactory().create("nope", {})
