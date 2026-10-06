@@ -24,6 +24,8 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from payweave.core.errors import IdempotencyConflictError, IdempotencyInProgressError
+
 
 def fingerprint(request: BaseModel) -> str:
     """Stable SHA-256 of a request's canonical JSON (sorted keys, no whitespace)."""
@@ -69,3 +71,44 @@ class IdempotencyStore(Protocol):
     async def release(self, key: str) -> None:
         """Forget an IN_PROGRESS key whose operation definitely did not happen."""
         ...
+
+
+@dataclass(slots=True)
+class _Entry:
+    fingerprint: str
+    state: IdempotencyState
+    response: bytes | None = None
+
+
+class InMemoryIdempotencyStore:
+    """Single-process store for tests and local runs; the Postgres store comes later.
+
+    Each method runs to completion without awaiting, so on one event loop a
+    ``begin`` can't interleave with another ``begin``: the claim is atomic.
+    """
+
+    def __init__(self) -> None:
+        self._entries: dict[str, _Entry] = {}
+
+    async def begin(self, key: str, request_fingerprint: str) -> BeginOutcome:
+        entry = self._entries.get(key)
+        if entry is None:
+            self._entries[key] = _Entry(request_fingerprint, IdempotencyState.IN_PROGRESS)
+            return Started()
+        if entry.fingerprint != request_fingerprint:
+            raise IdempotencyConflictError(key)
+        if entry.state is IdempotencyState.IN_PROGRESS or entry.response is None:
+            raise IdempotencyInProgressError(key)
+        return Replay(entry.response)
+
+    async def complete(self, key: str, response: bytes) -> None:
+        entry = self._entries.get(key)
+        if entry is None or entry.state is not IdempotencyState.IN_PROGRESS:
+            raise LookupError(f"idempotency key {key!r} is not in progress")
+        entry.state, entry.response = IdempotencyState.COMPLETED, response
+
+    async def release(self, key: str) -> None:
+        entry = self._entries.get(key)
+        if entry is not None and entry.state is IdempotencyState.COMPLETED:
+            raise LookupError(f"idempotency key {key!r} already completed; it can't be released")
+        self._entries.pop(key, None)
