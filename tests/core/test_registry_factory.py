@@ -111,10 +111,12 @@ def test_declaring_unimplemented_capability_is_rejected() -> None:
         factory.create("dummy", {"api_key": "s"})
 
 
-def test_flag_without_its_operation_is_rejected() -> None:
-    caps = frozenset({Capability.GET_PAYMENT, Capability.PARTIAL_REFUND})
+@pytest.mark.parametrize(
+    "name", ["Razorpay", "razor pay", "razorpay/sg", "1razorpay", "razorpay-sg", " "]
+)
+def test_bad_gateway_names_rejected(name: str) -> None:
     with pytest.raises(CapabilityMismatchError):
-        GatewayFactory([DummyProvider(caps)]).create("dummy", {"api_key": "s"})
+        GatewayFactory([DummyProvider()]).create("dummy", {"api_key": "s"}, name=name)
 
 
 def test_config_from_env() -> None:

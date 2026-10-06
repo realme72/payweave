@@ -9,10 +9,11 @@ webhooks without a configured secret) can't be used either.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import cast
 
-from payweave.core.capabilities import FLAG_REQUIRES, INTERFACE_FOR, Capability, Gateway
+from payweave.core.capabilities import INTERFACE_FOR, Capability, Gateway
 from payweave.core.errors import (
     CapabilityMismatchError,
     DuplicateGatewayError,
@@ -20,30 +21,22 @@ from payweave.core.errors import (
     UnsupportedCapabilityError,
 )
 
+_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _CAPABILITY_FOR: dict[type[Gateway], Capability] = {v: k for k, v in INTERFACE_FOR.items()}
 
 
-def validate_gateway(gateway: object) -> None:
-    """Raise ``CapabilityMismatchError`` if the gateway declares something it can't do."""
-    if not isinstance(gateway, Gateway):
-        raise CapabilityMismatchError(f"{gateway!r} does not expose name and capabilities")
-    name = gateway.name
-    if not name or name != name.strip().lower() or " " in name:
-        raise CapabilityMismatchError(f"gateway name must be a lowercase slug, got {name!r}")
-
-    declared = gateway.capabilities
-    if not isinstance(declared, frozenset) or not all(isinstance(c, Capability) for c in declared):
-        raise CapabilityMismatchError(f"{name}: capabilities must be a frozenset[Capability]")
-
-    for capability, interface in INTERFACE_FOR.items():
-        if capability in declared and not isinstance(gateway, interface):
+def validate_gateway(gateway: Gateway) -> None:
+    """Fail at startup, not mid-payment: every declared operation must exist."""
+    if not _NAME.fullmatch(gateway.name):
+        raise CapabilityMismatchError(
+            f"gateway name must be lowercase letters, digits or _: {gateway.name!r}"
+        )
+    for capability in gateway.capabilities:
+        interface = INTERFACE_FOR.get(capability)
+        if interface is not None and not isinstance(gateway, interface):
             raise CapabilityMismatchError(
-                f"{name}: declares {capability} but doesn't implement {interface.__name__}"
+                f"{gateway.name}: declares {capability} but lacks {interface.__name__}"
             )
-
-    for flag, required in FLAG_REQUIRES.items():
-        if flag in declared and required not in declared:
-            raise CapabilityMismatchError(f"{name}: {flag} requires {required}")
 
 
 class GatewayRegistry:

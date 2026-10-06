@@ -129,16 +129,3 @@ INTERFACE_FOR: MappingProxyType[Capability, type[Gateway]] = MappingProxyType(
         Capability.CHECKOUT_RETURN: CheckoutReturnVerifier,
     }
 )
-
-# Behaviour flags and the operation capability each one depends on.
-FLAG_REQUIRES: MappingProxyType[Capability, Capability] = MappingProxyType(
-    {
-        Capability.MANUAL_CAPTURE: Capability.CAPTURE,
-        Capability.PARTIAL_CAPTURE: Capability.CAPTURE,
-        Capability.PARTIAL_REFUND: Capability.REFUND,
-        Capability.MULTIPLE_REFUNDS: Capability.REFUND,
-        Capability.NATIVE_IDEMPOTENT_CREATE: Capability.CREATE_PAYMENT,
-        Capability.NATIVE_IDEMPOTENT_CAPTURE: Capability.CAPTURE,
-        Capability.NATIVE_IDEMPOTENT_REFUND: Capability.REFUND,
-    }
-)
