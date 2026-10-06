@@ -200,8 +200,16 @@ idempotency store must prevent duplicate orders.
 - **Finding F5: no auto-refund of uncaptured payments in test mode** (so far):
   an order created with `manual_expiry_period=12` is still `authorized` 3h after payment.
 
+### Webhooks (2026-10-07, scripts/webhook_receiver.py via a zrok tunnel)
+- **V2 confirmed**: real deliveries verify as hex HMAC-SHA256 of the raw body with the
+  webhook secret (`X-Razorpay-Signature`); `X-Razorpay-Event-Id` is present.
+- **Finding F6: webhook payloads are snapshots taken at delivery time, not at the event.**
+  `refund.created` already carried the refund as `processed` (the refund API had
+  returned `pending` moments earlier). Confirms D-design: `WebhookEvent` carries ids
+  only and the receiver re-fetches state from the API.
+- Refund events contain both `refund` and `payment` entities (`contains: [refund, payment]`).
+
 ### Still open
-- V2 webhook signature encoding (needs a webhook secret + zrok tunnel)
 - V3 auto-refund timing for uncaptured payments (F5: not within 3h in test mode)
 - V4 `payment.authorized` sample with `captured: true`
 - V5 failure-reason spelling (`insufficient_fund` vs `insufficient_funds`): not settled,
