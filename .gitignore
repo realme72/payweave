@@ -20,3 +20,9 @@ docs/sources/*/*
 *.csv
 *.pem
 *.key
+
+# Local sandbox run results (contain order/payment ids)
+.sandbox/
+
+# Local tool binaries (Jaeger): re-create with `make jaeger`
+.tools/

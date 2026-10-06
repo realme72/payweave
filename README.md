@@ -36,6 +36,22 @@ fields, handling webhooks and writing tests. PayWeave automates that work:
 - **Money done right:** integer minor units plus ISO-4217 currency codes, never floats
 - **Secure by default:** secrets only from env, constant-time webhook signature checks, replay protection, idempotency
 
+## Observability (OpenTelemetry)
+
+Every gateway call is a span plus metrics (`payweave.gateway.operations`,
+`payweave.gateway.operation.duration`), added by a decorator in
+`payweave.observability`: gateways contain no telemetry code. Export is OTLP, so
+the backend is configuration: Jaeger locally, Grafana Cloud or any OTLP backend later.
+
+```bash
+make jaeger        # local Jaeger v2, no Docker; UI at http://localhost:16686
+make trace-demo    # a few TEST-mode calls, then look at service "payweave"
+```
+
+Only allowlisted fields are exported (gateway, operation, ids, amounts, statuses,
+error class). Secrets, signatures, headers, metadata and error messages never are,
+and `tests/observability` fails if any of them shows up in exported data.
+
 ## Status
 
 Planning. See [PLAN.md](PLAN.md) for the architecture, decisions and phases.

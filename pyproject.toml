@@ -6,11 +6,19 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28.1",
+    "opentelemetry-api>=1.45.1",
     "pydantic>=2.9",
 ]
 
 [project.entry-points."payweave.gateways"]
 razorpay = "payweave.gateways.razorpay:provider"
+
+[project.optional-dependencies]
+otel = [
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
+    "opentelemetry-sdk>=1.45.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]
@@ -20,6 +28,9 @@ build-backend = "uv_build"
 dev = [
     "hypothesis>=6.168.5",
     "mypy>=2.4.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
+    "opentelemetry-sdk>=1.45.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",

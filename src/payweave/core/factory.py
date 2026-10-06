@@ -35,6 +35,7 @@ from pydantic import BaseModel, ValidationError
 from payweave.core.capabilities import Gateway
 from payweave.core.errors import DomainError
 from payweave.core.registry import GatewayRegistry, validate_gateway
+from payweave.observability.tracing import traced
 
 ENTRY_POINT_GROUP = "payweave.gateways"
 
@@ -195,9 +196,14 @@ class GatewayFactory:
         specs: Iterable[GatewaySpec],
         *,
         context_for: Callable[[str], GatewayContext] | None = None,
+        decorate: Callable[[Gateway], Gateway] | None = traced,
     ) -> GatewayRegistry:
+        """Create and register every spec. ``decorate`` wraps each gateway
+        (Decorator pattern); by default OpenTelemetry tracing, a no-op unless an
+        SDK is configured. Pass ``None`` to register the raw gateways."""
         registry = GatewayRegistry()
         for spec in specs:
             context = context_for(spec.name) if context_for else None
-            registry.register(self.create(spec.type, spec.config, name=spec.name, context=context))
+            gateway = self.create(spec.type, spec.config, name=spec.name, context=context)
+            registry.register(decorate(gateway) if decorate else gateway)
         return registry
