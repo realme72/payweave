@@ -1,7 +1,7 @@
 <h1 align="center">🧵 PayWeave</h1>
 
 <p align="center">
-  <b>Weave any payment gateway into one API — with AI that reads the docs and proves it got them right.</b><br>
+  <b>Automated payment gateway integration: AI builds and tests each gateway, you get one API for all of them.</b><br>
   Hand it a gateway's docs and it builds a verified, secure integration that you then review and approve.
 </p>
 

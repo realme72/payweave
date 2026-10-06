@@ -1,7 +1,6 @@
 # PayWeave — Master Plan
 
-> Weave any payment gateway into one API, with AI that reads the docs and
-> **proves** it got them right.
+> Automated payment gateway integration: AI builds and tests each gateway, you get one API for all of them.
 
 Status: Phase 0 core written; Razorpay native model documented (2026-10-07).
 

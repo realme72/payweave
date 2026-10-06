@@ -1,7 +1,7 @@
 [project]
 name = "payweave"
 version = "0.1.0"
-description = "Weave any payment gateway into one API, with AI that reads the docs and proves it got them right."
+description = "Automated payment gateway integration: AI builds and tests each gateway, you get one API for all of them."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
