@@ -123,8 +123,88 @@ Error body: `code` (e.g. `BAD_REQUEST_ERROR`, `GATEWAY_ERROR`, `SERVER_ERROR`), 
 | **D7** | Orders never "fail" natively; they stay `created`/`attempted`. | Intent-level `FAILED` is not used by Razorpay. An intent with no successful attempt becomes **EXPIRED** by our own timeout policy (new status), and attempts carry the failure details. |
 
 ## 9. To verify in the sandbox (Phase 1)
+
+(Results in §10.)
 - V1: status after a partial refund (§2.2)
 - V2: webhook signature encoding is hex (§3)
 - V3: auto-refund timing for uncaptured payments in test mode (3 vs 5 days)
 - V4: the `payment.authorized` sample with `captured: true`: is that a docs mistake or real behaviour?
 - V5: test-mode outcomes we can trigger (success, failure, insufficient funds, OTP) using Razorpay's test cards and UPI IDs
+
+---
+
+## 10. Sandbox results (2026-10-06, test mode, test card 4100 2800 0000 1007)
+
+Order `order_TkbJyY9QeE4zVX`, ₹500, manual capture, paid via Checkout ("skip OTP" → Success).
+
+| Check | Result |
+|---|---|
+| Checkout return signature | ✅ verified server-side (`verify_checkout_return`) |
+| After payment (manual capture) | ✅ native `authorized`, `captured=false` → PayWeave intent `authorized` |
+| Capture | ✅ native `captured`; order `paid` → intent `captured` |
+| Capture again (retry) | ✅ no second API call; current intent returned |
+| **V1** partial refund | ✅ **confirmed**: payment stays `status=captured`, `refund_status=partial` → intent `partially_refunded` |
+| Refund retry with same `X-Refund-Idempotency` key | ✅ no duplicate refund created |
+| Refund status | ✅ `processed` → `succeeded` (all five refunds) |
+| Totals | ✅ PayWeave captured/refunded match Razorpay's `amount`/`amount_refunded` exactly |
+
+### New finding F1: refunds are limited by the merchant balance, not the payment
+
+- Payment ₹500 had a Razorpay **fee of ₹10**. Refunds succeeded up to a cumulative **₹490**.
+  ₹190.01 more failed; ₹190.00 succeeded. In test mode the refundable capacity is
+  *captured − fees*; in live mode refunds draw on the whole account balance.
+- The failure is a vague `400 BAD_REQUEST_ERROR "invalid request sent"` with
+  `reason/source/step = "NA"`. This is **not documented** in the refund error list.
+- Impact: PayWeave maps it to `InvalidRequestError` (don't retry). In reality it's
+  "insufficient merchant balance", which can succeed later. Razorpay gives no
+  machine-readable reason to distinguish it, so for now: document it, surface the
+  message, and have the service layer treat a refund 400 with `reason == "NA"` as
+  needing human attention, not as a mapping bug.
+- Consequence: an intent can stay `partially_refunded` with a small unrefundable
+  remainder (₹10 here) in test mode.
+
+### Server-side scenarios (`scripts/sandbox_scenarios.py`, 26 checks)
+
+All error mappings behaved as designed: below-minimum order → `InvalidRequestError`,
+wrong secret → `AuthenticationFailedError`, unknown ids → `InvalidRequestError`,
+malformed ids and 3-decimal amounts blocked before any API call, capture/refund in
+the wrong state blocked locally, capture retries idempotent. USD, JPY and KWD
+orders are accepted on this test account.
+
+### Finding F2: test mode rate-limits bursts
+~9 order creations in quick succession → `429 Too many requests` (mapped correctly
+to `RateLimitedError`, retryable). The scenario script paces calls 2 s apart.
+
+### Finding F3: receipts are NOT unique, despite the docs
+`api__orders__entity.md` says the receipt "has to be unique", but a second order with
+the same receipt was accepted. Receipts can't be used for dedupe; PayWeave's own
+idempotency store must prevent duplicate orders.
+
+### Finding F4: undocumented minimums and a catch-all error
+- Order minimum ₹1.00: "Order amount less than minimum amount allowed".
+- **Refund minimum ₹1.00** (not in the refund docs): "The amount must be atleast INR 1.00".
+- Refund idempotency key < 10 chars → clear error (matches the docs).
+- `400 "invalid request sent"` with `reason=NA` is a **catch-all**: seen for an unknown
+  refund id *and* for insufficient refund balance (F1). It can't be classified more precisely.
+
+### Checkout scenario run (2026-10-07, scripts/checkout_harness.py + verify_scenarios.py)
+- **Refund idempotency conflict confirmed**: same `X-Refund-Idempotency` key replayed
+  with the same body returns the same refund; with a different amount Razorpay returns
+  "Different request with the same idempotency key has already been processed"
+  → `DuplicateRequestError`. Manual capture, auto capture, partial refund all mapped correctly.
+- Dismissing Checkout creates a **failed payment** (`payment_cancelled`, source
+  `customer`) → CUSTOMER_CANCELLED. So "closed without paying" is a real attempt.
+- Choosing *Failure* on the mock bank page yields a generic `payment_failed`
+  (source `gateway`, step `payment_authorization`) → currently TECHNICAL_ERROR.
+  Arguably DECLINED; decision pending.
+- **Finding F5: no auto-refund of uncaptured payments in test mode** (so far):
+  an order created with `manual_expiry_period=12` is still `authorized` 3h after payment.
+
+### Still open
+- V2 webhook signature encoding (needs a webhook secret + zrok tunnel)
+- V3 auto-refund timing for uncaptured payments (F5: not within 3h in test mode)
+- V4 `payment.authorized` sample with `captured: true`
+- V5 failure-reason spelling (`insufficient_fund` vs `insufficient_funds`): not settled,
+  every run so far used the success card 4100 2800 0000 1007, so the specific
+  failure cards (f1-f6) still need a run *with those card numbers*.
+- UPI collect: u1/u2 were completed by card, UPI ID option not exercised.

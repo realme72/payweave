@@ -29,3 +29,7 @@ https://razorpay.com/docs/build/llm-docs/errors.md
 https://razorpay.com/docs/build/llm-docs/errors/common.md
 https://razorpay.com/docs/build/llm-docs/webhooks/refunds.md
 https://razorpay.com/docs/build/llm-docs/webhooks/orders.md
+https://razorpay.com/docs/build/llm-docs/payments/payments/test-card-details.md
+https://razorpay.com/docs/build/llm-docs/payments/payments/test-upi-details.md
+https://razorpay.com/docs/build/llm-docs/payments/payment-gateway/s2s-integration.md
+https://razorpay.com/docs/build/llm-docs/payments/payment-gateway/s2s-integration/payment-methods.md
