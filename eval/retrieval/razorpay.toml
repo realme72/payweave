@@ -1,0 +1,294 @@
+# Retrieval evaluation set for Razorpay docs (docs/sources/razorpay/).
+#
+# Each case: a question as a developer (or the integration agent) would ask it,
+# the document(s) that answer it, and a phrase the answering chunk must contain.
+# Questions are deliberately NOT copied from the docs' wording.
+# Run: uv run --extra knowledge python -m payweave.knowledge eval eval/retrieval/razorpay.toml
+
+gateway = "razorpay"
+
+# --- auth and API basics ----------------------------------------------------------------
+[[case]]
+question = "How do I authenticate API requests to Razorpay?"
+doc = "api__understand.md"
+contains = "[YOUR_KEY_ID]:[YOUR_KEY_SECRET]"
+
+[[case]]
+question = "Are amounts sent in rupees or in paise?"
+doc = ["api__orders__create.md", "api__understand.md"]
+contains = "smallest"
+
+[[case]]
+question = "what does the API return when I send too many requests"
+doc = "errors__common.md"
+contains = "rate limit"
+
+[[case]]
+question = "error saying the API key is invalid, what's wrong?"
+doc = "errors__common.md"
+contains = "Incorrect API key or secret"
+
+[[case]]
+question = "What is the shape of an error response body?"
+doc = ["errors.md", "errors__common.md"]
+# label audit: the field list ("contains `code`, `description`, ...") answers it too
+contains = "`description`"
+
+# --- orders -----------------------------------------------------------------------------
+[[case]]
+question = "Which fields are required to create an order?"
+doc = "api__orders__create.md"
+contains = "`amount` _mandatory_"
+
+[[case]]
+question = "How long can a receipt be on an order?"
+doc = "api__orders__create.md"
+# label audit: both the parameter and the error entry state the 40-character limit
+contains = "40 characters"
+
+[[case]]
+question = "How many notes key-value pairs can I attach to an order?"
+doc = "api__orders__create.md"
+contains = "`notes` _optional_"
+
+[[case]]
+question = "When does an order move from created to attempted?"
+doc = "api__orders__entity.md"
+contains = "attempted"
+
+[[case]]
+question = "order status values and their meaning"
+doc = ["api__orders__entity.md", "api__orders__create.md", "api__orders__fetch-with-id.md"]
+contains = "`paid`"
+
+[[case]]
+question = "how do I get all the payment attempts made against one order"
+doc = "api__orders__fetch-payments.md"
+contains = "/payments"
+
+[[case]]
+question = "Can an order accept partial payments?"
+doc = "api__orders__create.md"
+contains = "partial_payment"
+
+[[case]]
+question = "set a custom capture timeout when creating the order"
+doc = ["api__orders__create.md", "payments__payments__capture-settings__api.md"]
+contains = "manual_expiry_period"
+
+[[case]]
+question = "What does amount_due represent on an order?"
+doc = ["api__orders__entity.md", "api__orders__create.md", "api__orders__fetch-with-id.md"]
+contains = "amount_due"
+
+# --- payments and capture ---------------------------------------------------------------
+[[case]]
+question = "How do I capture an authorized payment?"
+doc = "api__payments__capture.md"
+contains = "/v1/payments/:id/capture"
+
+[[case]]
+question = "Can I capture less than the authorised amount?"
+doc = "api__payments__capture.md"
+contains = "Capture amount must be equal to the amount authorized"
+
+[[case]]
+question = "what happens if I try to capture a payment twice"
+doc = "api__payments__capture.md"
+contains = "already been either captured or voided"
+
+[[case]]
+question = "What does the authorized status of a payment mean?"
+doc = "payments__payments.md"
+contains = "successfully authenticates"
+
+[[case]]
+question = "lifecycle of a payment from created to captured"
+doc = "payments__payments.md"
+contains = "`captured`"
+
+[[case]]
+question = "What is the minimum time I can set for auto-capture?"
+doc = ["payments__payments__capture-settings.md", "payments__payments__capture-settings__api.md"]
+contains = "12 minutes"
+
+[[case]]
+question = "what happens to payments I never capture"
+doc = ["payments__payments__capture-settings.md", "payments__payments__capture-settings__api.md"]
+contains = "auto-refunded"
+
+[[case]]
+question = "payment failed but later became authorized, why?"
+doc = ["payments__payments__late-authorisation.md", "payments__payments__late-authorisation__handle.md"]
+contains = "late"
+
+[[case]]
+question = "how quickly are late authorised payments refunded if not captured"
+doc = ["payments__payments__late-authorisation.md", "payments__payments__late-authorisation__handle.md"]
+contains = "5 working days"
+
+[[case]]
+question = "Does Razorpay support three decimal currencies like KWD?"
+doc = ["api__payments__capture.md", "api__refunds__create-normal.md", "api__orders__create.md"]
+contains = "three decimal"
+
+[[case]]
+question = "Which field shows how much of a payment was refunded?"
+doc = ["api__payments__entity.md", "api__payments__fetch-with-id.md", "api__payments__capture.md"]
+contains = "amount_refunded"
+
+[[case]]
+question = "Where do I find the bank reference number (RRN) for a payment?"
+doc = ["api__payments__entity.md", "api__payments__fetch-with-id.md"]
+contains = "acquirer_data"
+
+[[case]]
+question = "Do I need PCI DSS compliance to collect card details on my own server?"
+doc = "payments__payment-gateway__s2s-integration.md"
+contains = "PCI"
+
+# --- refunds ----------------------------------------------------------------------------
+[[case]]
+question = "What is the smallest refund I can make?"
+doc = "api__refunds__create-normal.md"
+contains = "INR 1.00"
+
+[[case]]
+question = "How do I make a refund request idempotent?"
+doc = "api__refunds__normal-refunds-idempotent.md"
+contains = "X-Refund-Idempotency"
+
+[[case]]
+question = "minimum length of the X-Refund-Idempotency key"
+doc = "api__refunds__normal-refunds-idempotent.md"
+contains = "at least 10 characters"
+
+[[case]]
+question = "If I don't pass an amount, how much gets refunded?"
+doc = ["api__refunds__create-normal.md", "api__refunds__normal-refunds-idempotent.md"]
+contains = "entire payment amount will be refunded"
+
+[[case]]
+question = "refund amount is more than what was captured"
+doc = "api__refunds__create-normal.md"
+contains = "greater than amount captured"
+
+[[case]]
+question = "What statuses can a refund be in?"
+# label audit: every refund endpoint page documents the same `status` field
+doc = ["api__refunds__entity.md", "api__refunds__fetch-with-id.md", "api__refunds__create-normal.md", "api__refunds__normal-refunds-idempotent.md", "api__refunds__fetch-multiple-refund-payment.md"]
+contains = "`pending`"
+
+[[case]]
+question = "which speed was actually used to process the refund"
+doc = ["api__refunds__entity.md", "api__refunds__fetch-with-id.md", "api__refunds__create-normal.md"]
+contains = "speed_processed"
+
+[[case]]
+question = "List all refunds issued against one payment"
+doc = "api__refunds__fetch-multiple-refund-payment.md"
+contains = "last 10 refunds"
+
+[[case]]
+question = "How do I fetch a single refund by its id?"
+doc = "api__refunds__fetch-with-id.md"
+contains = "/refunds/"
+
+# --- checkout and signatures ------------------------------------------------------------
+[[case]]
+question = "How do I verify the payment signature after checkout?"
+doc = "payments__payment-gateway__web-integration__standard__integration-steps.md"
+contains = "razorpay_payment_id"
+
+[[case]]
+question = "what string is signed to produce razorpay_signature"
+doc = "payments__payment-gateway__web-integration__standard__integration-steps.md"
+contains = "order_id + \"|\" + razorpay_payment_id"
+
+[[case]]
+question = "difference between callback_url and the webhook URL"
+doc = "payments__payment-gateway__web-integration__standard__integration-steps.md"
+contains = "callback_url"
+
+[[case]]
+question = "pre-fill the customer's details in the checkout form"
+doc = "payments__payment-gateway__web-integration__standard__integration-steps.md"
+contains = "prefill"
+
+# --- webhooks ---------------------------------------------------------------------------
+[[case]]
+question = "How is the webhook signature calculated?"
+doc = "webhooks__validate-test.md"
+contains = "HMAC with SHA256"
+
+[[case]]
+question = "Which header carries the webhook signature?"
+doc = "webhooks__validate-test.md"
+contains = "X-Razorpay-Signature"
+
+[[case]]
+question = "How do I avoid processing the same webhook event twice?"
+doc = "webhooks__best-practices.md"
+contains = "x-razorpay-event-id"
+
+[[case]]
+question = "How long does Razorpay keep retrying a failed webhook?"
+doc = "webhooks__best-practices.md"
+contains = "24 hours"
+
+[[case]]
+question = "what response code should my webhook endpoint return"
+# label audit: the setup page states it too ("status code in the range `2XX`")
+doc = ["webhooks__best-practices.md", "webhooks__setup-edit-payments.md"]
+contains = "2xx"
+
+[[case]]
+question = "can I use a localhost URL for webhooks"
+doc = "webhooks__setup-edit-payments.md"
+contains = "localhost"
+
+[[case]]
+question = "Should I listen to payment.captured or order.paid?"
+doc = ["webhooks__payments.md", "webhooks__orders.md"]
+contains = "order.paid"
+
+[[case]]
+question = "Which event fires when a refund cannot be processed?"
+doc = "webhooks__refunds.md"
+contains = "refund.failed"
+
+# --- errors and testing -------------------------------------------------------------------
+[[case]]
+question = "what does error_reason payment_cancelled mean"
+doc = "errors__payments__list.md"
+contains = "payment_cancelled"
+
+[[case]]
+question = "card declined because the customer doesn't have enough balance"
+doc = ["errors__payments__cards.md", "errors__payments__list.md"]
+contains = "insufficient_funds"
+
+[[case]]
+question = "customer entered the wrong OTP"
+doc = ["errors__payments__cards.md", "errors__payments__list.md"]
+contains = "OTP"
+
+[[case]]
+question = "What do the error source and step fields tell me?"
+doc = ["errors__payments__payment-methods-error-parameters.md", "errors__payments__list.md", "errors.md"]
+contains = "source"
+
+[[case]]
+question = "test card number for a domestic Visa debit card"
+doc = "payments__payments__test-card-details.md"
+contains = "4100 2800 0000 1007"
+
+[[case]]
+question = "test UPI id that makes the payment fail"
+doc = "payments__payments__test-upi-details.md"
+contains = "failure@razorpay"
+
+[[case]]
+question = "Is UPI collect still supported?"
+doc = ["payments__payment-gateway__s2s-integration__payment-methods.md", "payments__payments__test-upi-details.md"]
+contains = "deprecated"

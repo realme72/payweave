@@ -18,7 +18,7 @@ it proposes is trusted until checks that don't use AI have passed.
 | **LangGraph** | Agent workflow graph | Stateful graph with loops, human-in-the-loop interrupts, Postgres checkpoints | Resumable, replayable, auditable agent runs |
 | **Pydantic v2** | Canonical models + **Manifest schema** | Strict validation with a Rust core; exports JSON Schema | The *same* schema validates AI output, constrains Claude's structured output and documents the manifest format, so there's one source of truth |
 | **httpx** | Outbound calls to gateways | Async, timeouts, pluggable transports | Easy to mock in tests and gives us retry/timeout control |
-| **PostgreSQL 16** | Payments, idempotency keys, audit log, manifests | ACID transactions, which money needs; already installed natively on your Mac | One database for state, RAG and audit. No Redis or Mongo to run |
+| **PostgreSQL 18** | Payments, idempotency keys, audit log, manifests | ACID transactions, which money needs; already installed natively on your Mac | One database for state, RAG and audit. No Redis or Mongo to run |
 | **SQLAlchemy 2 + Alembic** | ORM + migrations | The standard choice, async-capable | Schema changes tracked and versioned |
 | **uv** | Packaging / env | Much faster than pip/poetry, and lockfiles are reproducible | Quick setup, same dependencies on every machine |
 

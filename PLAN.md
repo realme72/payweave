@@ -345,5 +345,5 @@ payweave/
 |---|---|
 | Phase 1 | Razorpay test account ✅ (keys in `.env`); Cashfree sandbox account |
 | Phase 1 | A tunnel for webhooks: `zrok` (Razorpay blacklists ngrok/localtunnel) |
-| Phase 3 | Claude API key; Postgres 16 + pgvector (already installed) |
+| Phase 3 | Postgres 18 + pgvector (already installed); Claude API key only for contextual retrieval |
 | Phase 4 | PayPal developer sandbox (holdout) |

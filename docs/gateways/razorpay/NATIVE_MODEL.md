@@ -182,7 +182,7 @@ idempotency store must prevent duplicate orders.
 
 ### Finding F4: undocumented minimums and a catch-all error
 - Order minimum ₹1.00: "Order amount less than minimum amount allowed".
-- **Refund minimum ₹1.00** (not in the refund docs): "The amount must be atleast INR 1.00".
+- **Refund minimum ₹1.00**: "The amount must be atleast INR 1.00". (Correction: it *is* documented, only in the Errors list of api__refunds__create-normal.md, not under the `amount` parameter.)
 - Refund idempotency key < 10 chars → clear error (matches the docs).
 - `400 "invalid request sent"` with `reason=NA` is a **catch-all**: seen for an unknown
   refund id *and* for insufficient refund balance (F1). It can't be classified more precisely.
