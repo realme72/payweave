@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS kb_documents (
     title           text NOT NULL,
     endpoint        text,                   -- e.g. POST /v1/payments/:id/refund
     content_hash    text NOT NULL,          -- sha256 of the snapshot
-    pipeline        text NOT NULL,          -- chunker version + embedding model
+    pipeline        text NOT NULL,          -- chunker version + config + embedding model
+    embedding_model text NOT NULL,
     ingested_at     timestamptz NOT NULL DEFAULT now(),
     UNIQUE (gateway, path)
 );
@@ -73,7 +74,7 @@ CREATE TABLE IF NOT EXISTS kb_chunks (
     heading_path    text[] NOT NULL,
     content         text NOT NULL,          -- context header + body: exactly what was embedded
     token_count     int NOT NULL,
-    embedding       vector(384) NOT NULL,
+    embedding       vector({dimensions}) NOT NULL,
     tsv             tsvector GENERATED ALWAYS AS
                         (to_tsvector('english', content) || to_tsvector('simple', content)) STORED
 );
@@ -132,12 +133,22 @@ def reciprocal_rank_fusion(
 
 class KnowledgeStore:
     def __init__(self, embedder: Embedder, dsn: str = DEFAULT_DSN) -> None:
-        if embedder.dimensions != 384:
-            raise ValueError("the kb_chunks.embedding column is vector(384)")
         self._embedder = embedder
         self._conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
-        self._conn.execute(SCHEMA)
+        self._conn.execute(SCHEMA.replace("{dimensions}", str(embedder.dimensions)))
         register_vector(self._conn)
+        # One database holds one embedding size: a model change needs a re-ingest
+        # into a fresh database (vectors from different models aren't comparable).
+        stored = self._conn.execute(
+            """SELECT atttypmod FROM pg_attribute
+               WHERE attrelid = 'kb_chunks'::regclass AND attname = 'embedding'"""
+        ).fetchone()
+        if stored and stored["atttypmod"] != embedder.dimensions:
+            self._conn.close()
+            raise ValueError(
+                f"database stores {stored['atttypmod']}-dim vectors but {embedder.model_name} "
+                f"makes {embedder.dimensions}; use another database or drop the kb_* tables"
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -170,8 +181,9 @@ class KnowledgeStore:
             )
             doc_id = self._conn.execute(
                 """INSERT INTO kb_documents
-                       (gateway, path, url, title, endpoint, content_hash, pipeline)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                       (gateway, path, url, title, endpoint, content_hash, pipeline,
+                        embedding_model)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 (
                     source.gateway,
                     source.path,
@@ -180,6 +192,7 @@ class KnowledgeStore:
                     doc.endpoint,
                     doc.content_hash,
                     pipeline,
+                    self._embedder.model_name,
                 ),
             ).fetchone()["id"]  # type: ignore[index]
             section_ids: dict[int, int] = {}
@@ -231,6 +244,18 @@ class KnowledgeStore:
 
     # --- search ----------------------------------------------------------------------------
 
+    def _check_same_model(self) -> None:
+        """Vectors from different models aren't comparable, even at equal sizes."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT embedding_model AS model FROM kb_documents"
+        ).fetchall()
+        others = {r["model"] for r in rows} - {self._embedder.model_name}
+        if others:
+            raise ValueError(
+                f"stored chunks were embedded with {sorted(others)}, not "
+                f"{self._embedder.model_name}; re-ingest first"
+            )
+
     def search(
         self,
         query: str,
@@ -241,6 +266,8 @@ class KnowledgeStore:
         limit: int = 5,
         weights: dict[str, float] | None = None,
     ) -> list[SearchHit]:
+        if mode is not SearchMode.KEYWORD:
+            self._check_same_model()
         rankings: dict[str, list[int]] = {}
         if mode in (SearchMode.KEYWORD, SearchMode.HYBRID):
             rankings["keyword"] = self._keyword_ids(query, gateway, kinds, CANDIDATES)

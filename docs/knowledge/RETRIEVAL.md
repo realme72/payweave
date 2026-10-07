@@ -6,9 +6,10 @@ tried, and what we kept. Re-run with `make kb-ingest && make kb-eval`.
 ## Setup
 
 - **Corpus:** 35 Razorpay doc pages (`docs/sources/razorpay/`) → **801 chunks**,
-  avg 140 tokens, max 508 (hard limit 512: BGE-small silently ignores the rest).
-- **Embeddings:** `BAAI/bge-small-en-v1.5` (384 dims), local via fastembed, with
-  BGE's query instruction prefix.
+  avg 140 tokens, max 508 (cap 512: BGE models silently ignore anything longer).
+- **Embeddings:** `nomic-ai/nomic-embed-text-v1.5` (768 dims; `search_query:` /
+  `search_document:` prefixes), local via fastembed. Chosen by the model comparison
+  below; the method comparison was run with `BAAI/bge-small-en-v1.5`.
 - **Store:** Postgres 18 + pgvector 0.8 (HNSW, cosine) and Postgres full-text search.
 - **Eval set:** `eval/retrieval/razorpay.toml`, 55 developer-style questions, each
   with the document(s) that answer it and a phrase the answering chunk must contain.
@@ -21,13 +22,31 @@ tried, and what we kept. Re-run with `make kb-ingest && make kb-eval`.
 | Method | recall@1 | recall@5 | MRR | latency |
 |---|---|---|---|---|
 | keyword (full-text) | 33% | 53% | 0.420 | 4 ms |
-| **vector** (default) | **64%** | **89%** | **0.735** | **9 ms** |
+| **vector** (BGE-small) | **64%** | **89%** | **0.735** | **9 ms** |
 | hybrid, RRF equal weights | 51% | 78% | 0.620 | 15 ms |
 | hybrid, keyword weight 0.3 | 62% | 82% | 0.697 | 18 ms |
 | hybrid top 20 → MiniLM-L6 reranker | 60% | 84% | 0.701 | 633 ms |
 | hybrid top 20 → bge-reranker-base | 64% | 87% | 0.732 | 3,209 ms |
 
-**Target was recall@5 ≥ 90%. We're at 89% (49/55): one question short.**
+**Target was recall@5 ≥ 90%.** BGE-small reached 89% (49/55); switching the
+embedding model (next section) reached **91% (50/55)**.
+
+### Embedding models (vector search, same chunks and questions)
+
+| Model | dims | recall@1 | recall@5 | MRR | ingest | query |
+|---|---|---|---|---|---|---|
+| BAAI/bge-small-en-v1.5 | 384 | 64% | 89% | 0.735 | 32 s | 8 ms |
+| BAAI/bge-base-en-v1.5 | 768 | 60% | 89% | 0.721 | 139 s | 21 ms |
+| BAAI/bge-large-en-v1.5 | 1024 | 62% | 89% | 0.747 | 301 s | 47 ms |
+| snowflake-arctic-embed-m | 768 | 62% | 89% | 0.727 | 88 s | 14 ms |
+| mxbai-embed-large-v1 | 1024 | 58% | 91% | 0.729 | 252 s | 37 ms |
+| **nomic-embed-text-v1.5** (default) | 768 | **64%** | **91%** | **0.751** | 114 s | 18 ms |
+| thenlper/gte-base | 768 | 56% | 89% | 0.708 | 91 s | 14 ms |
+
+Every model lands at 89–91%: size barely matters here. Nomic is best or tied on
+all three metrics, but its lead is one question, i.e. within noise. The plateau
+says the remaining misses are about how those passages are chunked, not about
+embedding quality.
 
 ### Chunking experiments (vector search)
 
@@ -59,7 +78,7 @@ With 55 questions, one question is ~2%, so only large gaps are meaningful.
    case didn't list (e.g. the receipt's 40-character limit is stated in an error
    entry). Those cases were fixed, with a comment on each in the TOML.
 
-## Remaining misses (vector)
+## Remaining misses (vector, BGE-small; Nomic recovers one of them)
 
 - "How do I authenticate API requests?": the answer is a curl `-u key:secret`
   line in a general page; code-heavy chunks from other pages outrank it.
