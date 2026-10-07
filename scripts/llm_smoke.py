@@ -17,15 +17,8 @@ import json
 from payweave.knowledge.chunker import ChunkKind
 from payweave.knowledge.embedder import FastEmbedEmbedder
 from payweave.knowledge.store import KnowledgeStore
-from payweave.llm import (
-    LLMRateLimitError,
-    LLMRequest,
-    LLMResponse,
-    Message,
-    OpenAICompatibleProvider,
-    StopReason,
-    Tool,
-)
+from payweave.llm import LLMRequest, Message, OpenAICompatibleProvider, StopReason, Tool
+from payweave.llm.retry import complete_with_retry
 
 SEARCH = Tool(
     name="search_docs",
@@ -51,19 +44,6 @@ SYSTEM = (
 MAX_TURNS = 5
 
 
-async def complete(llm: OpenAICompatibleProvider, request: LLMRequest) -> LLMResponse:
-    """One retry on a per-minute 429; a daily-cap 429 can't be waited out."""
-    try:
-        return await llm.complete(request)
-    except LLMRateLimitError as exc:
-        if exc.daily_exhausted:
-            raise
-        wait = exc.retry_after or 10.0
-        print(f"(rate limited, retrying in {wait:.0f}s)")
-        await asyncio.sleep(wait)
-        return await llm.complete(request)
-
-
 async def main(provider_name: str, question: str | None, list_models: bool) -> None:
     llm = OpenAICompatibleProvider.from_preset(provider_name)
     try:
@@ -75,11 +55,12 @@ async def main(provider_name: str, question: str | None, list_models: bool) -> N
             messages: list[Message] = [Message("user", question)]
             used_in = used_out = 0
             for turn in range(1, MAX_TURNS + 1):
-                response = await complete(
+                response = await complete_with_retry(
                     llm,
                     LLMRequest(
                         messages=tuple(messages), system=SYSTEM, tools=(SEARCH,), max_tokens=700
                     ),
+                    on_wait=lambda wait, _exc: print(f"(rate limited, retrying in {wait:.0f}s)"),
                 )
                 used_in += response.usage.input_tokens
                 used_out += response.usage.output_tokens

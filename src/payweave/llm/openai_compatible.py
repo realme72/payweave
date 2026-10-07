@@ -138,6 +138,8 @@ class OpenAICompatibleProvider:
                 }
                 for t in request.tools
             ]
+        if request.require_tool:
+            body["tool_choice"] = {"type": "function", "function": {"name": request.require_tool}}
         # GenAI semantic conventions, so traces read the same in any backend.
         with _tracer.start_as_current_span(f"chat {model}") as span:
             span.set_attributes(

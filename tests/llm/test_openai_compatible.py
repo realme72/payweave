@@ -88,6 +88,7 @@ async def test_tool_call_round_trip(
     assert (tool_call.name, tool_call.arguments) == ("search_docs", {"query": "refund minimum"})
     sent = json.loads(route.calls.last.request.content)
     assert sent["tools"][0]["function"]["name"] == "search_docs"
+    assert "tool_choice" not in sent
 
     second = await groq.complete(
         LLMRequest(
@@ -107,6 +108,17 @@ async def test_tool_call_round_trip(
         "tool_call_id": "call_1",
         "content": "chunk: at least INR 1.00",
     }
+
+
+async def test_required_tool_is_sent_as_tool_choice(
+    router: respx.MockRouter, groq: OpenAICompatibleProvider
+) -> None:
+    route = router.post("/chat/completions").respond(json=completion({"content": "x"}))
+    await groq.complete(
+        LLMRequest(messages=(Message("user", "x"),), tools=(SEARCH,), require_tool="search_docs")
+    )
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["tool_choice"] == {"type": "function", "function": {"name": "search_docs"}}
 
 
 async def test_invalid_tool_json_is_reported_not_raised(

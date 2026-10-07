@@ -276,6 +276,13 @@ class KnowledgeStore:
         fused = reciprocal_rank_fusion(rankings, weights=weights)[:limit]
         return self._hits(fused)
 
+    def chunks_by_ref(self, refs: Iterable[str]) -> dict[str, str]:
+        """Chunk text for each ref that exists (for checking citations)."""
+        rows = self._conn.execute(
+            "SELECT ref, content FROM kb_chunks WHERE ref = ANY(%s)", (list(refs),)
+        ).fetchall()
+        return {r["ref"]: r["content"] for r in rows}
+
     def _filters(
         self, gateway: str | None, kinds: Sequence[ChunkKind] | None
     ) -> tuple[str, list[Any]]:

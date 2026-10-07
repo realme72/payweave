@@ -26,3 +26,6 @@ docs/sources/*/*
 
 # Local tool binaries (Jaeger): re-create with `make jaeger`
 .tools/
+
+# Agent run outputs (spec cards, logs): local only
+.runs/

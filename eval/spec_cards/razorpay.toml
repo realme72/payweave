@@ -1,0 +1,32 @@
+# Hand-checked Razorpay Spec Card: the answer key for agent-extracted cards.
+# Sources: docs/gateways/razorpay/NATIVE_MODEL.md (doc citations there) and the
+# sandbox runs recorded in its §10. Strings compare case-insensitively.
+
+[basics]
+api_base_url = "https://api.razorpay.com/v1"
+auth_scheme = "basic"            # HTTP Basic auth with the key id and secret
+amount_unit = "minor_unit"       # "in the smallest currency sub-unit"
+
+[payment_flow]
+intent_object = "order"
+customer_completion = "hosted_checkout"   # Razorpay Checkout creates the payment
+manual_capture = true
+partial_capture = false          # "Capture amount must be equal to the amount authorized"
+void_supported = false           # no void API; uncaptured payments auto-refund
+
+[refunds]
+partial_refunds = true
+multiple_refunds = true
+idempotency_header = "X-Refund-Idempotency"
+
+[webhooks]
+signature_header = "X-Razorpay-Signature"
+signature_algorithm = "hmac_sha256_hex"   # confirmed in the sandbox (V2)
+signing_secret = "webhook_secret"
+event_id_header = "x-razorpay-event-id"
+ordered_delivery = false
+duplicate_deliveries = true
+
+[errors]
+error_code_field = "code"
+reason_field = "reason"

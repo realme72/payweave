@@ -160,6 +160,12 @@ def test_hits_carry_their_parent_section_and_context_header(store: KnowledgeStor
     assert "`amount` _optional_" in hit.section  # the whole section, for the LLM
 
 
+def test_chunks_by_ref_returns_only_existing_refs(store: KnowledgeStore) -> None:
+    chunks = store.chunks_by_ref(["razorpay:webhooks.md#0", "razorpay:nope.md#9"])
+    assert list(chunks) == ["razorpay:webhooks.md#0"]
+    assert "X-Razorpay-Signature" in chunks["razorpay:webhooks.md#0"]
+
+
 def test_reciprocal_rank_fusion() -> None:
     fused = reciprocal_rank_fusion({"keyword": [1, 2, 3], "vector": [3, 1, 4]})
     assert [cid for cid, _, _ in fused][:2] == [1, 3]  # high in both lists wins

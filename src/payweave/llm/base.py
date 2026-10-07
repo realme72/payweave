@@ -63,6 +63,8 @@ class LLMRequest:
     max_tokens: int = 2048  # some providers count this as used, so keep it tight
     temperature: float = 0.0
     model: str | None = None  # None = the provider's configured model
+    # Force a call to this tool (it must be in ``tools``); None lets the model choose.
+    require_tool: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
