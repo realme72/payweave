@@ -9,6 +9,7 @@ import json
 import re
 import secrets
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -212,10 +213,13 @@ class RazorpaySimulator:
         return {k: v for k, v in order.items() if not k.startswith("_")}
 
 
+RAZORPAY_PACKAGE = Path(__file__).parents[2] / "packages" / "razorpay" / "v1"
+
+
 class RazorpayHarness:
-    def __init__(self, router: respx.MockRouter) -> None:
+    def __init__(self, router: respx.MockRouter, rz_provider: Any = provider) -> None:
         self.sim = RazorpaySimulator(router)
-        self._gateway = GatewayFactory([provider]).create(
+        self._gateway = GatewayFactory([rz_provider]).create(
             "razorpay",
             {"key_id": fx.KEY_ID, "key_secret": KEY_SECRET, "webhook_secrets": [WEBHOOK_SECRET]},
             context=GatewayContext(name="razorpay"),

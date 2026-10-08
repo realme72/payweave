@@ -1,0 +1,102 @@
+# Razorpay as a Gateway Package, written by hand (PLAN.md Phase 2). It must
+# behave exactly like src/payweave/gateways/razorpay: the same tests run on both.
+# Facts and doc citations: docs/gateways/razorpay/NATIVE_MODEL.md.
+
+schema_version = 1
+gateway = "razorpay"
+version = "1"
+flags = ["manual_capture", "partial_refund", "multiple_refunds"]  # no void, no partial capture
+
+[api]
+base_url = "https://api.razorpay.com/v1/"
+allowed_hosts = ["api.razorpay.com"]
+
+[auth]
+scheme = "basic"
+username = "key_id"
+password = "key_secret"
+
+[credentials.key_id]
+public = true  # Checkout needs it in the browser
+pattern = "^rzp_(test|live)_[A-Za-z0-9]+$"
+
+[credentials.key_secret]
+secret = true
+
+[credentials.webhook_secrets]
+# Current secret first; keep old ones while rotating (webhooks__validate-test.md).
+secret = true
+multiple = true
+required = false
+
+[live_guard]
+credential = "key_id"
+live_pattern = "^rzp_live_"
+
+# Order capture settings (payments__payments__capture-settings__api.md)
+[settings.automatic_capture_expiry_minutes]
+type = "int"
+default = 12
+minimum = 12
+
+[settings.manual_capture_expiry_minutes]
+type = "int"
+default = 7200
+minimum = 12
+maximum = 7200
+
+[settings.uncaptured_refund_speed]
+type = "str"
+default = "normal"
+choices = ["normal", "optimum"]
+
+[ids]
+intent = "^order_[A-Za-z0-9]+$"
+attempt = "^pay_[A-Za-z0-9]+$"
+refund = "^rfnd_[A-Za-z0-9]+$"
+
+[operations.create_payment]
+method = "POST"
+path = "orders"
+
+[operations.get_payment.primary]
+method = "GET"
+path = "orders/{intent_id}"
+
+[operations.get_payment.related.payments]
+method = "GET"
+path = "orders/{intent_id}/payments"
+
+[operations.capture]
+method = "POST"
+path = "payments/{attempt_id}/capture"
+
+[operations.refund]
+method = "POST"
+path = "payments/{attempt_id}/refund"
+idempotency_header = "X-Refund-Idempotency"
+
+[operations.get_refund]
+method = "GET"
+path = "refunds/{refund_id}"
+
+[errors]  # errors.md: {"error": {"code", "description", "reason", ...}}
+message_paths = ["error.description"]
+code_paths = ["error.reason", "error.code"]
+
+[[errors.rules]]  # normal-refunds-idempotent.md
+category = "duplicate_request"
+message_contains = "same idempotency key"
+
+[webhooks]  # webhooks__validate-test.md; hex encoding confirmed in the sandbox (V2)
+scheme = "hmac_sha256_hex"
+signature_header = "X-Razorpay-Signature"
+event_id_header = "X-Razorpay-Event-Id"
+secrets_credential = "webhook_secrets"
+
+[checkout_return]  # standard integration-steps.md
+scheme = "hmac_sha256_hex"
+message_template = "{razorpay_order_id}|{razorpay_payment_id}"
+key_credential = "key_secret"
+signature_param = "razorpay_signature"
+intent_param = "razorpay_order_id"

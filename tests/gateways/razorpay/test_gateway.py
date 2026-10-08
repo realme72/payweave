@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import json
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -25,8 +27,18 @@ from payweave.core.factory import GatewayFactory, InvalidGatewayConfigError
 from payweave.core.models import CaptureMode, CaptureRequest, CreatePaymentRequest, RefundRequest
 from payweave.core.money import Money
 from payweave.core.status import IntentStatus, RefundStatus
-from payweave.gateways.razorpay import RazorpayGateway, provider
+from payweave.gateways.razorpay import provider
+from payweave.packages.runtime import PackageProvider, load_package
 from tests.gateways.razorpay import fixtures as fx
+
+# Every test runs on the hand-written gateway and on the Razorpay Gateway
+# Package (packages/razorpay/v1): the package must behave identically (Phase 2).
+PACKAGE_DIR = Path(__file__).parents[3] / "packages" / "razorpay" / "v1"
+PROVIDERS: dict[str, Any] = {
+    "hand_written": provider,
+    "package": PackageProvider(load_package(PACKAGE_DIR)),
+}
+type RazorpayGateway = Any  # either implementation
 
 API = "https://api.razorpay.com/v1"
 KEY_SECRET = "test_key_secret"
@@ -41,10 +53,15 @@ def router() -> Iterator[respx.MockRouter]:
         yield mock
 
 
+@pytest.fixture(params=list(PROVIDERS))
+def rz_provider(request: pytest.FixtureRequest) -> Any:
+    return PROVIDERS[request.param]
+
+
 @pytest.fixture
-async def gateway() -> AsyncIterator[RazorpayGateway]:
-    factory = GatewayFactory([provider])
-    gw = factory.create(
+async def gateway(rz_provider: Any) -> AsyncIterator[RazorpayGateway]:
+    factory = GatewayFactory([rz_provider])
+    gw: RazorpayGateway = factory.create(
         "razorpay",
         {
             "key_id": fx.KEY_ID,
@@ -52,7 +69,7 @@ async def gateway() -> AsyncIterator[RazorpayGateway]:
             "webhook_secrets": [WEBHOOK_SECRET, OLD_WEBHOOK_SECRET],
         },
     )
-    assert isinstance(gw, RazorpayGateway)
+    assert gw.name == "razorpay"
     yield gw
     await gw.aclose()
 
@@ -329,8 +346,8 @@ def test_webhook_signature_checked_before_parsing(gateway: RazorpayGateway) -> N
         )
 
 
-def test_webhooks_disabled_without_secret() -> None:
-    gw = GatewayFactory([provider]).create(
+def test_webhooks_disabled_without_secret(rz_provider: Any) -> None:
+    gw = GatewayFactory([rz_provider]).create(
         "razorpay", {"key_id": fx.KEY_ID, "key_secret": KEY_SECRET}
     )
     assert Capability.WEBHOOKS not in gw.capabilities
@@ -357,8 +374,8 @@ def test_checkout_return_signature(gateway: RazorpayGateway) -> None:
 # --- config safety --------------------------------------------------------------
 
 
-def test_live_keys_refused_unless_allowed() -> None:
-    factory = GatewayFactory([provider])
+def test_live_keys_refused_unless_allowed(rz_provider: Any) -> None:
+    factory = GatewayFactory([rz_provider])
     with pytest.raises(InvalidGatewayConfigError):
         factory.create("razorpay", {"key_id": "rzp_live_abc", "key_secret": "s"})
     gw = factory.create(

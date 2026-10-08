@@ -8,6 +8,8 @@ lint:
 
 typecheck:
 	uv run mypy
+	@# Gate G1: each Gateway Package's mappers, strict, one at a time (same module name)
+	for f in packages/*/*/mappers.py; do uv run mypy --strict "$$f" || exit 1; done
 
 test:
 	uv run pytest --cov --cov-report=term-missing

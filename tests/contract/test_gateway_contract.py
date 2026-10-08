@@ -47,8 +47,9 @@ from payweave.core.models import (
 )
 from payweave.core.money import Money
 from payweave.core.status import AttemptStatus, IntentStatus, RefundStatus, can_advance
+from payweave.packages.runtime import PackageProvider, load_package
 from payweave.testing import GatewayHarness
-from tests.contract.harnesses import FakeHarness, RazorpayHarness
+from tests.contract.harnesses import RAZORPAY_PACKAGE, FakeHarness, RazorpayHarness
 
 AMOUNT = Money.of(50000, "INR")
 
@@ -62,6 +63,10 @@ def router() -> Iterator[respx.MockRouter]:
 HARNESSES: dict[str, Callable[[respx.MockRouter], GatewayHarness]] = {
     "fake": lambda _router: FakeHarness(),
     "razorpay": RazorpayHarness,
+    # The same simulator, through the Razorpay Gateway Package instead.
+    "razorpay_package": lambda router: RazorpayHarness(
+        router, PackageProvider(load_package(RAZORPAY_PACKAGE))
+    ),
 }
 
 

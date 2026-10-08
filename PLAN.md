@@ -145,7 +145,7 @@ the key is passed through natively.
 
 ```
 packages/<gateway>/<version>/
-  manifest.yaml      # data: auth scheme, base URLs, endpoints, field maps,
+  manifest.toml      # data: auth scheme, base URLs, endpoints, field maps,
                      # status map, error map, webhook scheme, capabilities
   mappers.py         # small pure functions where data can't express it
   provenance.json    # every manifest field / mapper → doc chunk IDs + doc snapshot hash
