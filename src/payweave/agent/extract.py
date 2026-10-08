@@ -116,6 +116,7 @@ class SectionResult:
     searches: list[str] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    out_of_budget: bool = False  # the provider's daily cap hit: later sections are skipped
 
 
 def fit_context(messages: Sequence[Message], budget_chars: int) -> list[Message]:
@@ -177,7 +178,8 @@ async def extract_section(
         Message(
             "user",
             f"Gateway: {gateway}. Fill in the `{cls.TITLE}` section ({cls.GOAL}). "
-            f"The fields and what they mean are in the parameters of {submit.name}.",
+            f"The fields and what they mean are in the parameters of {submit.name}."
+            + (f"\n\n{cls.HINTS}" if cls.HINTS else ""),
         )
     ]
     with _tracer.start_as_current_span(f"spec_card.{cls.TITLE}") as span:
@@ -221,15 +223,14 @@ async def extract_section(
                 try:
                     response = await _submission_as_json(llm, messages, submit, log)
                 except LLMError as fallback_exc:
-                    if getattr(fallback_exc, "daily_exhausted", False):
-                        raise
+                    result.out_of_budget = getattr(fallback_exc, "daily_exhausted", False)
                     result.problems = [str(fallback_exc)]
                     span.set_attributes({"payweave.turns": turn, "payweave.accepted": False})
                     return result
             except LLMError as exc:
-                if getattr(exc, "daily_exhausted", False):
-                    raise
-                # Keep what this section did so far (turns, searches, tokens) for the log.
+                # Keep what this section did so far (turns, searches, tokens) for the log,
+                # including when the daily cap ends the whole run.
+                result.out_of_budget = getattr(exc, "daily_exhausted", False)
                 result.problems = [str(exc)]
                 span.set_attributes({"payweave.turns": turn, "payweave.accepted": False})
                 return result
@@ -366,12 +367,9 @@ async def extract_card(
             results.append(SectionResult(cls.TITLE, None, problems=[out_of_budget]))
             continue
         log(f"[{cls.TITLE}]")
-        try:
-            result = await extract_section(llm, docs, gateway, cls, log=log)
-        except LLMError as exc:
-            if getattr(exc, "daily_exhausted", False):
-                out_of_budget = f"skipped: daily budget exhausted ({exc})"
-            result = SectionResult(cls.TITLE, None, problems=[str(exc)])
+        result = await extract_section(llm, docs, gateway, cls, log=log)
+        if result.out_of_budget:
+            out_of_budget = f"skipped: daily budget exhausted ({result.problems[0]})"
         results.append(result)
         values[cls.TITLE] = result.section
     return CardRun(SpecCard.model_validate(values), results)

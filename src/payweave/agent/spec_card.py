@@ -57,6 +57,9 @@ class Section(BaseModel):
     TITLE: ClassVar[str]
     GOAL: ClassVar[str]
     VERBATIM: ClassVar[frozenset[str]] = frozenset()
+    HINTS: ClassVar[str] = ""  # section-specific guidance for the first message
+    # "An API call exists" fields: true must quote the endpoint (method + path).
+    ENDPOINT_EVIDENCE: ClassVar[frozenset[str]] = frozenset()
 
     def cited_fields(self) -> dict[str, Cited[Any]]:
         return {name: value for name, value in self if isinstance(value, Cited)}
@@ -82,7 +85,7 @@ class Basics(Section):
 
 class PaymentFlow(Section):
     TITLE = "payment_flow"
-    GOAL = "how a payment is created, completed by the customer, and captured"
+    GOAL = "what the merchant's server creates before the customer pays, and who completes it"
     VERBATIM = frozenset({"intent_object"})
 
     intent_object: Cited[Identifier] = Field(
@@ -94,14 +97,35 @@ class PaymentFlow(Section):
         "checkout form provided by the gateway (hosted_checkout), or the gateway's mobile/JS SDK "
         "without a hosted form (client_sdk)"
     )
+
+
+# Split from PaymentFlow: these facts live in different docs (capture vs checkout),
+# and two of three are usually "no", which takes searching for a rule that says so.
+class Capture(Section):
+    TITLE = "capture"
+    GOAL = "whether payments can be authorized now and captured later, partially, or voided"
+    ENDPOINT_EVIDENCE = frozenset({"manual_capture", "void_supported"})
+    HINTS = (
+        "For true/false fields, a documented rule that forbids something is evidence for "
+        "false: cite the rule (e.g. 'the capture amount must equal the authorized amount' "
+        "means partial capture is false). Not finding a mention is not evidence: use null. "
+        "manual_capture and void_supported are true only if you can quote the endpoint "
+        "(method and path) that does it."
+    )
+
     manual_capture: Cited[bool] = Field(
-        description="true if a payment can be authorized now and captured later with an API call"
+        description="true if a payment can be authorized now and captured later with an API "
+        "call; cite that endpoint (method and path)"
     )
     partial_capture: Cited[bool] = Field(
-        description="true if less than the authorized amount can be captured"
+        description="true if a capture call can take less than one payment's authorized "
+        "amount. Not the same as several separate payments against one order "
+        "(often called partial payments)"
     )
     void_supported: Cited[bool] = Field(
-        description="true if there is an API call to cancel/void an authorized, uncaptured payment"
+        description="true only if there is an API endpoint to cancel/void an authorized, "
+        "uncaptured payment; cite it (method and path). A payment *status* named voided is not "
+        "an endpoint"
     )
 
 
@@ -172,7 +196,7 @@ class Errors(Section):
     )
 
 
-SECTIONS: tuple[type[Section], ...] = (Basics, PaymentFlow, Refunds, Webhooks, Errors)
+SECTIONS: tuple[type[Section], ...] = (Basics, PaymentFlow, Capture, Refunds, Webhooks, Errors)
 
 
 class SpecCard(BaseModel):
@@ -181,6 +205,7 @@ class SpecCard(BaseModel):
     gateway: str
     basics: Basics | None = None
     payment_flow: PaymentFlow | None = None
+    capture: Capture | None = None
     refunds: Refunds | None = None
     webhooks: Webhooks | None = None
     errors: Errors | None = None

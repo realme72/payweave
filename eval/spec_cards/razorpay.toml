@@ -10,6 +10,8 @@ amount_unit = "minor_unit"       # "in the smallest currency sub-unit"
 [payment_flow]
 intent_object = "order"
 customer_completion = "hosted_checkout"   # Razorpay Checkout creates the payment
+
+[capture]
 manual_capture = true
 partial_capture = false          # "Capture amount must be equal to the amount authorized"
 void_supported = false           # no void API; uncaptured payments auto-refund

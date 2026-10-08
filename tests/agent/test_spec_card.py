@@ -258,6 +258,17 @@ async def test_card_keeps_going_after_a_failed_section_and_keeps_work_on_daily_c
     assert len(llm.requests) == 2  # nothing sent after the daily cap
 
 
+async def test_daily_cap_mid_section_keeps_that_sections_counts() -> None:
+    daily = LLMRateLimitError("TPD", provider="s", retry_after=None, daily_exhausted=True)
+    llm = ScriptedLLM(tool("search_docs", {"query": "webhook signature header"}), daily)
+    run = await extract_card(llm, FakeDocs(), "razorpay", sections=(Webhooks, Errors))
+    first = run.sections[0]
+    assert first.out_of_budget
+    assert (first.turns, len(first.searches)) == (2, 1)
+    assert first.input_tokens > 0
+    assert run.sections[1].problems[0].startswith("skipped: daily budget exhausted")
+
+
 def test_fit_context_drops_oldest_search_results_first() -> None:
     old = Message("tool", '<passage ref="a">' + "x" * 500, tool_call_id="1")
     newer = Message("tool", '<passage ref="b">' + "y" * 500, tool_call_id="2")
@@ -385,3 +396,42 @@ def test_score_against_reference() -> None:
 def test_citation_model_rejects_trivial_quotes() -> None:
     with pytest.raises(ValidationError):
         Citation(ref=SIG, quote="HMAC")
+
+
+def test_operation_claims_need_an_endpoint_quote() -> None:
+    from payweave.agent.citations import check_section  # noqa: PLC0415
+    from payweave.agent.spec_card import Capture  # noqa: PLC0415
+
+    ref = "razorpay:api__payments__capture.md#1"
+    chunk = (
+        "# Capture a Payment\n**POST** `/v1/payments/:id/capture`\n"
+        "A capture was attempted on a payment that has already moved out of the `authorized` "
+        "state. It is either already captured or has been voided."
+    )
+
+    def card(void: Any, quote: str) -> Capture:
+        cite = [{"ref": ref, "quote": quote}]
+        return Capture.model_validate(
+            {
+                "manual_capture": {
+                    "value": True,
+                    "citations": [{"ref": ref, "quote": "POST /v1/payments/:id/capture"}],
+                },
+                "partial_capture": {"value": None, "citations": []},
+                "void_supported": {"value": void, "citations": cite if void is not None else []},
+            }
+        )
+
+    mentioned = card(True, "It is either already captured or has been voided.")
+    assert any(
+        "void_supported: true needs a quote of the endpoint" in p
+        for p in check_section(mentioned, {ref: chunk})
+    )
+    assert check_section(card(None, ""), {ref: chunk}) == []  # manual_capture's endpoint passes
+    # false claims aren't held to it: they cite a rule, not an endpoint
+    assert (
+        check_section(
+            card(False, "It is either already captured or has been voided."), {ref: chunk}
+        )
+        == []
+    )
