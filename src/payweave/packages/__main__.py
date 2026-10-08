@@ -6,7 +6,8 @@
     uv run python -m payweave.packages verify                  # every package; exit 1 on failure
 
 ``sign`` only works in an interactive terminal: you type part of the hash you
-reviewed and your key's passphrase. Nothing can approve a package for you.
+reviewed and your key's passphrase. Nothing can approve a package for you. It
+also needs a current, promotable report.json (``python -m payweave.verify <dir>``).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from payweave.packages import signing
 from payweave.packages.runtime import GatewayPackage, PackageLoadError, load_package
+from payweave.verify.report import read_report, report_problem
 
 PACKAGES = Path("packages")
 CONFIRM_CHARS = 8
@@ -94,9 +96,20 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     return 0
 
 
+def report_lines(package: GatewayPackage, directory: Path) -> list[str]:
+    report = read_report(directory)
+    problem = report_problem(package, report)
+    lines = [f"  gate report   {problem or 'promotable'}"]
+    if report is not None and (report.get("package") or {}).get("sha256") == package.sha256:
+        for name, g in report["gates"].items():
+            lines.append(f"    {name} {g['status']:<8}{g['summary']}")
+    return lines
+
+
 def cmd_review(args: argparse.Namespace) -> int:
     package = load_package(args.directory)  # runs every load-time gate
     print("\n".join(describe(package)))
+    print("\n" + "\n".join(report_lines(package, args.directory)))
     print(f"\n  status        {approval_status(args.directory, args.trust_file)}")
     print(f"\nRead the files themselves too: {args.directory}/manifest.toml, mappers.py")
     return 0
@@ -107,7 +120,11 @@ def cmd_sign(args: argparse.Namespace) -> int:
         print("sign needs an interactive terminal: a person has to approve.", file=sys.stderr)
         return 2
     package = load_package(args.directory)
+    if problem := report_problem(package, read_report(args.directory)):
+        print(f"Not signing: {problem}.", file=sys.stderr)
+        return 1
     print("\n".join(describe(package)))
+    print("\n" + "\n".join(report_lines(package, args.directory)))
     print(f"\nYou are approving exactly these bytes for real traffic: {package.sha256}")
     typed = _input(f"Type the first {CONFIRM_CHARS} characters of the sha256 to approve: ")
     if typed.strip() != package.sha256[:CONFIRM_CHARS]:
@@ -126,15 +143,20 @@ def cmd_sign(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
+    """Approval valid *and* report.json current and promotable, for each package."""
     directories = args.directories or sorted(p.parent for p in PACKAGES.glob("*/*/manifest.toml"))
     trust = signing.load_trust(args.trust_file)
     failed = 0
     for directory in directories:
         try:
-            signing.load_signed_package(directory, trust)
+            package = signing.load_signed_package(directory, trust)
         except PackageLoadError as exc:
+            problem: str | None = str(exc)
+        else:
+            problem = report_problem(package, read_report(directory))
+        if problem:
             failed += 1
-            print(f"FAIL {directory}: {exc}")
+            print(f"FAIL {directory}: {problem}")
         else:
             print(f"ok   {directory}: approved by {signing.read_approval(directory).signer}")
     return 1 if failed else 0

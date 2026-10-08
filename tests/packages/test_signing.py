@@ -10,6 +10,7 @@ from payweave.packages import __main__ as cli
 from payweave.packages import signing
 from payweave.packages.runtime import PackageLoadError, PackageProvider, load_package
 from payweave.packages.signing import ApprovalError, load_signed_package
+from payweave.verify import report as report_mod
 
 RAZORPAY = Path(__file__).parents[2] / "packages" / "razorpay" / "v1"
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
@@ -33,6 +34,14 @@ def key() -> Ed25519PrivateKey:
 @pytest.fixture
 def trust(key: Ed25519PrivateKey) -> dict[str, Ed25519PublicKey]:
     return {"alice": key.public_key()}
+
+
+def promotable_report(directory: Path) -> None:
+    """Stand-in for `python -m payweave.verify` (tests/verify covers the real thing)."""
+    sha = load_package(directory).sha256
+    report_mod.write_report(
+        directory, {"package": {"sha256": sha}, "promotable": True, "gates": {}}
+    )
 
 
 def approve(directory: Path, key: Ed25519PrivateKey, signer: str = "alice") -> signing.Approval:
@@ -206,8 +215,12 @@ def test_keygen_review_sign_verify(
     assert cli.main([*trust, "verify", str(package_dir)]) == 1
 
     sha = load_package(package_dir).sha256
+    sign = [*trust, "sign", str(package_dir), "--signer", "alice"]
+    assert cli.main(sign) == 1  # no report.json yet
+    assert "no report.json" in capsys.readouterr().err
+    promotable_report(package_dir)
     person.typed, person.secrets = [sha[:8]], [PASSPHRASE]
-    assert cli.main([*trust, "sign", str(package_dir), "--signer", "alice"]) == 0
+    assert cli.main(sign) == 0
     assert cli.main([*trust, "verify", str(package_dir)]) == 0
     assert "approved by alice" in capsys.readouterr().out
 
@@ -228,6 +241,7 @@ def test_sign_refuses_wrong_confirmation_or_untrusted_key(
     sign = [*trust, "sign", str(package_dir), "--signer", "alice"]
     sha = load_package(package_dir).sha256
 
+    promotable_report(package_dir)
     signing.write_private_key("alice", PASSPHRASE)  # key exists but isn't trusted
     person.typed, person.secrets = ["deadbeef"], []
     assert cli.main(sign) == 1

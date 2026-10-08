@@ -50,7 +50,7 @@ from payweave.core.money import Money
 from payweave.core.status import AttemptStatus, IntentStatus
 from payweave.packages.http import Json, PackageHttpClient
 from payweave.packages.manifest import Manifest, Request
-from payweave.packages.sandbox import load_mappers
+from payweave.packages.sandbox import MapperRejectedError, load_mappers
 from payweave.packages.schemes import http_auth, verify_signature
 from payweave.packages.sdk import MapperContext
 
@@ -101,9 +101,12 @@ def load_package_from_sources(
         manifest = Manifest.model_validate(tomllib.loads(manifest_text))
     except (tomllib.TOMLDecodeError, ValueError) as exc:
         raise PackageLoadError(f"invalid manifest: {exc}") from exc
-    loaded = load_mappers(
-        mappers_text, module_name=f"payweave_package.{manifest.gateway}.v{manifest.version}"
-    )
+    try:
+        loaded = load_mappers(
+            mappers_text, module_name=f"payweave_package.{manifest.gateway}.v{manifest.version}"
+        )
+    except MapperRejectedError as exc:
+        raise PackageLoadError(str(exc)) from exc
     _check_mappers(manifest, loaded.functions)
     return GatewayPackage(
         manifest,

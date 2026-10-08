@@ -130,6 +130,11 @@ def test_missing_or_misnamed_mappers_are_rejected() -> None:
         load_package_from_sources(MANIFEST, renamed)
 
 
+def test_sandbox_rejection_is_a_load_error() -> None:
+    with pytest.raises(PackageLoadError, match="whole-module imports"):
+        load_package_from_sources(MANIFEST, "import os\n" + MAPPERS)
+
+
 def test_hash_covers_manifest_and_mappers() -> None:
     base = load_package(RAZORPAY).sha256
     assert load_package_from_sources(MANIFEST, MAPPERS).sha256 == base

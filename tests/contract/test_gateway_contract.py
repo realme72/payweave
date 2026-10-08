@@ -11,8 +11,10 @@ the AI and is never relaxed to make a gateway pass.
 
 from __future__ import annotations
 
+import os
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from pathlib import Path
 
 import pytest
 import respx
@@ -49,7 +51,10 @@ from payweave.core.money import Money
 from payweave.core.status import AttemptStatus, IntentStatus, RefundStatus, can_advance
 from payweave.packages.runtime import PackageProvider, load_package
 from payweave.testing import GatewayHarness
-from tests.contract.harnesses import RAZORPAY_PACKAGE, FakeHarness, RazorpayHarness
+from payweave.testing.razorpay import RazorpayHarness
+from payweave.verify.references import REFERENCES
+from payweave.verify.report import UNDER_TEST_ENV
+from tests.contract.harnesses import RAZORPAY_PACKAGE, FakeHarness
 
 AMOUNT = Money.of(50000, "INR")
 
@@ -68,6 +73,14 @@ HARNESSES: dict[str, Callable[[respx.MockRouter], GatewayHarness]] = {
         router, PackageProvider(load_package(RAZORPAY_PACKAGE), allow_unsigned=True)
     ),
 }
+
+# Gate G5 for any package: `python -m payweave.verify <dir>` sets this and runs `-k under_test`.
+if _under_test := os.environ.get(UNDER_TEST_ENV):
+    _package = load_package(Path(_under_test))
+    _reference = REFERENCES[_package.manifest.gateway]
+    HARNESSES["under_test"] = lambda router: _reference.harness(
+        router, PackageProvider(_package, allow_unsigned=True), None
+    )
 
 
 @pytest.fixture(params=list(HARNESSES))

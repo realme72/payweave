@@ -1,4 +1,4 @@
-.PHONY: packages-verify check lint typecheck test fmt docs-fetch secrets-scan jaeger trace-demo kb-ingest kb-eval
+.PHONY: gates packages-verify check lint typecheck test fmt docs-fetch secrets-scan jaeger trace-demo kb-ingest kb-eval
 
 check: lint typecheck test packages-verify
 
@@ -38,6 +38,12 @@ kb-ingest:
 kb-eval:
 	uv run --extra knowledge python -m payweave.knowledge eval eval/retrieval/razorpay.toml
 
+# Gates G1-G7 on a package; rewrites its report.json (PKG=packages/<gateway>/<version>)
+PKG ?= packages/razorpay/v1
+gates:
+	uv run python -m payweave.verify $(PKG)
+
 # Gate G8: every Gateway Package must carry a valid approval from a trusted signer
+# and a current, promotable report.json
 packages-verify:
 	uv run python -m payweave.packages verify
