@@ -1,0 +1,7 @@
+# Public keys allowed to approve Gateway Packages (gate G8).
+# Add yours with `python -m payweave.packages keygen <name>`.
+# Remove an entry to revoke it; its approvals stop loading.
+
+[signers.gaurav]
+public_key = "G6wSRFF89mpgDkozZbO64ZhwKkK/U7okm/NCCkLS+Lk="
+added = "2026-10-08"

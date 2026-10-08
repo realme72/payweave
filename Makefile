@@ -1,6 +1,6 @@
-.PHONY: check lint typecheck test fmt docs-fetch secrets-scan jaeger trace-demo kb-ingest kb-eval
+.PHONY: packages-verify check lint typecheck test fmt docs-fetch secrets-scan jaeger trace-demo kb-ingest kb-eval
 
-check: lint typecheck test
+check: lint typecheck test packages-verify
 
 lint:
 	uv run ruff check .
@@ -37,3 +37,7 @@ kb-ingest:
 
 kb-eval:
 	uv run --extra knowledge python -m payweave.knowledge eval eval/retrieval/razorpay.toml
+
+# Gate G8: every Gateway Package must carry a valid approval from a trusted signer
+packages-verify:
+	uv run python -m payweave.packages verify

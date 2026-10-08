@@ -65,7 +65,7 @@ HARNESSES: dict[str, Callable[[respx.MockRouter], GatewayHarness]] = {
     "razorpay": RazorpayHarness,
     # The same simulator, through the Razorpay Gateway Package instead.
     "razorpay_package": lambda router: RazorpayHarness(
-        router, PackageProvider(load_package(RAZORPAY_PACKAGE))
+        router, PackageProvider(load_package(RAZORPAY_PACKAGE), allow_unsigned=True)
     ),
 }
 

@@ -139,16 +139,16 @@ def test_hash_covers_manifest_and_mappers() -> None:
 
 async def test_mapper_crash_fails_closed() -> None:
     broken = MAPPERS.replace('native = entity.get("status")', 'native = entity["no_such_field"]')
-    gw: Any = GatewayFactory([PackageProvider(load_package_from_sources(MANIFEST, broken))]).create(
-        "razorpay", {"key_id": fx.KEY_ID, "key_secret": "s"}
-    )
+    gw: Any = GatewayFactory(
+        [PackageProvider(load_package_from_sources(MANIFEST, broken), allow_unsigned=True)]
+    ).create("razorpay", {"key_id": fx.KEY_ID, "key_secret": "s"})
     with pytest.raises(UnknownGatewayError, match="mapper refund failed: KeyError"):
         gw._call("refund", fx.refund(), gw._ctx)
     await gw.aclose()
 
 
 def test_mappers_get_public_credentials_only() -> None:
-    gw: Any = GatewayFactory([PackageProvider(load_package(RAZORPAY))]).create(
+    gw: Any = GatewayFactory([PackageProvider(load_package(RAZORPAY), allow_unsigned=True)]).create(
         "razorpay", {"key_id": fx.KEY_ID, "key_secret": "very_secret", "webhook_secrets": ["w"]}
     )
     assert gw._ctx == MapperContext(gateway="razorpay", public={"key_id": fx.KEY_ID})

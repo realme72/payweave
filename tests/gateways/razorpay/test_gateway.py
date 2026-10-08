@@ -36,7 +36,7 @@ from tests.gateways.razorpay import fixtures as fx
 PACKAGE_DIR = Path(__file__).parents[3] / "packages" / "razorpay" / "v1"
 PROVIDERS: dict[str, Any] = {
     "hand_written": provider,
-    "package": PackageProvider(load_package(PACKAGE_DIR)),
+    "package": PackageProvider(load_package(PACKAGE_DIR), allow_unsigned=True),
 }
 type RazorpayGateway = Any  # either implementation
 

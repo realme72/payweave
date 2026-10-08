@@ -1,0 +1,8 @@
+# Written by `python -m payweave.packages sign`. Do not edit.
+schema_version = 1
+gateway = "razorpay"
+version = "1"
+package_sha256 = "fd91ed02b8f0d459361180f0a7abdfb66e560753baaf093047d0560c3d398e8f"
+signer = "gaurav"
+signed_at = "2026-10-08T13:54:15Z"
+signature = "H9gmy1qID9oopsfjLVAvKYcYrGI56/QzMWnO7fEVp1JGftUEUw3eeGum5zJS0dtPP1PZ+6kNrS2KoD5fFLAkBA=="

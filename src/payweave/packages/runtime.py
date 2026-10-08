@@ -22,7 +22,7 @@ import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, create_model, model_validator
@@ -54,6 +54,9 @@ from payweave.packages.sandbox import load_mappers
 from payweave.packages.schemes import http_auth, verify_signature
 from payweave.packages.sdk import MapperContext
 
+if TYPE_CHECKING:
+    from payweave.packages.signing import Approval
+
 # Mapper name -> (parameter names, when it is required). Fixed by us, not the package.
 MAPPERS: Mapping[str, tuple[tuple[str, ...], str]] = {
     "create_payment_body": (("request", "settings"), "create_payment"),
@@ -81,6 +84,7 @@ class GatewayPackage:
     mappers: Mapping[str, Callable[..., Any]]
     sha256: str  # over manifest + mappers bytes: what G8 signs
     path: Path | None = None
+    approval: Approval | None = None  # set only by signing.load_signed_package
 
 
 def package_hash(manifest_bytes: bytes, mappers_bytes: bytes) -> str:
@@ -450,9 +454,25 @@ class PackageGateway:
 
 
 class PackageProvider:
-    """Factory provider for one loaded package (``GatewayFactory.register_provider``)."""
+    """Factory provider for one loaded package (``GatewayFactory.register_provider``).
 
-    def __init__(self, package: GatewayPackage, *, type_name: str | None = None) -> None:
+    Refuses packages that weren't approved (gate G8). ``allow_unsigned`` is for
+    tests and for trying out a package the agent just generated, never for serving.
+    """
+
+    def __init__(
+        self,
+        package: GatewayPackage,
+        *,
+        type_name: str | None = None,
+        allow_unsigned: bool = False,
+    ) -> None:
+        if package.approval is None and not allow_unsigned:
+            m = package.manifest
+            raise PackageLoadError(
+                f"{m.gateway} v{m.version} is not approved; load it with "
+                "signing.load_signed_package (sign it with `python -m payweave.packages sign`)"
+            )
         self._package = package
         self._type_name = type_name or package.manifest.gateway
         self._config_model = config_model(package.manifest)
