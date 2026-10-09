@@ -60,6 +60,12 @@ class Section(BaseModel):
     HINTS: ClassVar[str] = ""  # section-specific guidance for the first message
     # "An API call exists" fields: true must quote the endpoint (method + path).
     ENDPOINT_EVIDENCE: ClassVar[frozenset[str]] = frozenset()
+    # Dotted JSON paths (error.description): every segment must appear in a cited quote.
+    PATHS: ClassVar[frozenset[str]] = frozenset()
+    # Values that must be quoted as a JSON string from a sample response ("...").
+    JSON_STRINGS: ClassVar[frozenset[str]] = frozenset()
+    # Facts from earlier sections this one builds on ("section.field"), shown in its prompt.
+    USES: ClassVar[tuple[str, ...]] = ()
 
     def cited_fields(self) -> dict[str, Cited[Any]]:
         return {name: value for name, value in self if isinstance(value, Cited)}
@@ -196,7 +202,147 @@ class Errors(Section):
     )
 
 
-SECTIONS: tuple[type[Section], ...] = (Basics, PaymentFlow, Capture, Refunds, Webhooks, Errors)
+# --- integration facts: what the manifest compiler needs (agent/manifest_compiler.py) -------
+
+Endpoint = Annotated[str, Field(pattern=r"^(GET|POST|PUT|PATCH|DELETE) /\S*$", max_length=200)]
+DottedPath = Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")]
+
+
+class Endpoints(Section):
+    TITLE = "endpoints"
+    GOAL = "the REST endpoints to create, read, capture and refund payments"
+    USES = ("basics.api_base_url", "payment_flow.intent_object")
+    VERBATIM = frozenset(
+        {"create_intent", "get_intent", "list_attempts", "capture", "refund", "get_refund"}
+    )
+    HINTS = (
+        "Each value is the HTTP method, a space, and the path exactly as the endpoint's "
+        "reference page writes it, including any version prefix and its id placeholder "
+        "(e.g. 'POST /v1/things/:id/cancel'). Quote the line that shows it."
+    )
+
+    create_intent: Cited[Endpoint] = Field(
+        description="Create the object the merchant's server makes before the customer pays "
+        "(the intent_object of the payment_flow section)"
+    )
+    get_intent: Cited[Endpoint] = Field(description="Fetch that object by id")
+    list_attempts: Cited[Endpoint] = Field(
+        description="List the payments (attempts) made against one such object, by its id; "
+        "null if fetching the object already includes them"
+    )
+    capture: Cited[Endpoint] = Field(description="Capture an authorized payment, by payment id")
+    refund: Cited[Endpoint] = Field(description="Create a refund for a payment, by payment id")
+    get_refund: Cited[Endpoint] = Field(description="Fetch a refund by refund id")
+
+
+class IdFormats(Section):
+    TITLE = "ids"
+    GOAL = "what the gateway's ids look like, from sample responses"
+    USES = ("payment_flow.intent_object",)
+    VERBATIM = frozenset({"intent_id_example", "attempt_id_example", "refund_id_example"})
+    HINTS = "Copy each id exactly from a sample response or request in the docs."
+
+    intent_id_example: Cited[Identifier] = Field(
+        description="A sample id of the intent object (the thing created before paying)"
+    )
+    attempt_id_example: Cited[Identifier] = Field(
+        description="A sample id of a payment (one attempt by the customer)"
+    )
+    refund_id_example: Cited[Identifier] = Field(description="A sample id of a refund")
+
+
+class ApiKeys(Section):
+    TITLE = "api_keys"
+    GOAL = "how test-mode and live-mode API keys can be told apart"
+    VERBATIM = frozenset({"test_key_prefix", "live_key_prefix"})
+
+    test_key_prefix: Cited[Identifier] = Field(
+        description="The fixed start of a test-mode key, e.g. tk_test_; null if keys don't show it"
+    )
+    live_key_prefix: Cited[Identifier] = Field(
+        description="The fixed start of a live-mode key, e.g. tk_live_; null if keys don't show it"
+    )
+    prefixed_key: Cited[Literal["key_id", "secret_key"]] = Field(
+        description="Which key carries that prefix: key_id (a public/id part used as the "
+        "username) or secret_key (the secret itself)"
+    )
+
+
+class ErrorShape(Section):
+    TITLE = "error_shape"
+    GOAL = (
+        "where the body of a failed API request (an HTTP 4xx response) puts its message and "
+        "codes, and the duplicate-request error"
+    )
+    PATHS = frozenset({"message_path", "code_path", "reason_path"})
+    VERBATIM = frozenset({"idempotency_conflict_message"})
+    JSON_STRINGS = frozenset({"idempotency_conflict_message"})
+    HINTS = (
+        "Paths are dotted JSON paths into the body the API returns when a request fails "
+        '(HTTP 4xx), e.g. error.message for {"error": {"message": ...}}. Quote a sample '
+        "error response that shows them. Not the failure fields stored on a payment or "
+        "refund object (those describe a declined payment, not a failed request)."
+    )
+
+    message_path: Cited[DottedPath] = Field(description="Path to the human-readable message")
+    code_path: Cited[DottedPath] = Field(description="Path to the broad error code")
+    reason_path: Cited[DottedPath] = Field(
+        description="Path to the specific machine-readable reason, or null if there is none"
+    )
+    idempotency_conflict_message: Cited[str] = Field(
+        description="The error message the API returns when an idempotency key is reused with "
+        "a different request, copied from a sample error response body (a JSON string value, "
+        "quote it with its quotes), not from the docs' explanation of the error; null if no "
+        "sample shows it"
+    )
+
+
+class CheckoutReturn(Section):
+    TITLE = "checkout_return"
+    GOAL = (
+        "what the customer's browser sends back to the merchant after paying in the gateway's "
+        "checkout, and how its signature is verified"
+    )
+    VERBATIM = frozenset({"intent_param", "attempt_param", "signature_param"})
+    USES = ("payment_flow.intent_object",)
+
+    intent_param: Cited[Identifier] = Field(
+        description="Name of the returned parameter holding the intent object's id"
+    )
+    attempt_param: Cited[Identifier] = Field(
+        description="Name of the returned parameter holding the payment id"
+    )
+    signature_param: Cited[Identifier] = Field(
+        description="Name of the returned parameter holding the signature"
+    )
+    signed_message: Cited[Literal["intent_id|payment_id", "payment_id|intent_id", "other"]] = Field(
+        description="What is signed: the intent id, a | separator, and the payment id (in "
+        "the order the docs give); other for anything else"
+    )
+    signature_scheme: Cited[Literal["hmac_sha256_hex", "other"]] = Field(
+        description="hmac_sha256_hex if it's an HMAC SHA256 hex digest"
+    )
+    signing_key: Cited[Literal["api_key_secret", "other"]] = Field(
+        description="api_key_secret if it's signed with the API key's secret"
+    )
+
+
+SPEC_SECTIONS: tuple[type[Section], ...] = (
+    Basics,
+    PaymentFlow,
+    Capture,
+    Refunds,
+    Webhooks,
+    Errors,
+)
+INTEGRATION_SECTIONS: tuple[type[Section], ...] = (
+    Endpoints,
+    IdFormats,
+    ApiKeys,
+    ErrorShape,
+    CheckoutReturn,
+)
+SECTIONS = SPEC_SECTIONS + INTEGRATION_SECTIONS
 
 
 class SpecCard(BaseModel):
@@ -209,6 +355,11 @@ class SpecCard(BaseModel):
     refunds: Refunds | None = None
     webhooks: Webhooks | None = None
     errors: Errors | None = None
+    endpoints: Endpoints | None = None
+    ids: IdFormats | None = None
+    api_keys: ApiKeys | None = None
+    error_shape: ErrorShape | None = None
+    checkout_return: CheckoutReturn | None = None
 
 
 def tool_schema(model: type[BaseModel]) -> dict[str, Any]:

@@ -191,3 +191,10 @@ def test_refund_mapping_matches_hand_written(status: str) -> None:
     assert package.mappers["refund"](entity, ctx) == mapping.refund_from_entity(
         entity, gateway="razorpay"
     )
+
+
+def test_builtins_missing_from_the_sandbox_are_caught_statically() -> None:
+    problems = check_source("def f(x: object) -> bool:\n    return isinstance(x, (int, float))\n")
+    assert any("builtin 'float' isn't available" in p for p in problems)
+    # A local that happens to share a builtin's name is fine.
+    assert check_source("def f(iter: int) -> int:\n    return iter + 1\n") == []

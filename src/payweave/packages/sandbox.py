@@ -45,6 +45,8 @@ SAFE_BUILTINS = frozenset(
         "True", "False", "None",
     }
 )  # fmt: skip
+_PY_BUILTINS = frozenset(dir(builtins))
+_AVAILABLE = ", ".join(sorted(SAFE_BUILTINS - {"True", "False", "None"}))
 # Names that could reach I/O, the clock, introspection or dynamic code.
 FORBIDDEN_NAMES = frozenset(
     {
@@ -104,6 +106,29 @@ def check_source(source: str, filename: str = "mappers.py") -> list[str]:  # noq
             bad(stmt, f"only imports, functions and constants allowed at module level, "
                       f"not {type(stmt).__name__}")  # fmt: skip
 
+    # Names the module binds itself (so a local called `iter` isn't taken for the builtin).
+    bound = (
+        {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+        | {
+            a.arg
+            for f in ast.walk(tree)
+            if isinstance(f, (ast.FunctionDef, ast.Lambda))
+            for a in (*f.args.posonlyargs, *f.args.args, *f.args.kwonlyargs)
+        }
+        | {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+        | {
+            a.asname or a.name
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom)
+            for a in n.names
+        }
+        | {
+            g.target.id
+            for g in ast.walk(tree)
+            if isinstance(g, ast.comprehension) and isinstance(g.target, ast.Name)
+        }
+    )
+
     for node in ast.walk(tree):
         for kind, label in _FORBIDDEN_NODES.items():
             if isinstance(node, kind):
@@ -130,6 +155,16 @@ def check_source(source: str, filename: str = "mappers.py") -> list[str]:  # noq
         elif isinstance(node, ast.Name):
             if node.id in FORBIDDEN_NAMES or node.id.startswith("__"):
                 bad(node, f"use of {node.id!r} is not allowed")
+            elif (
+                isinstance(node.ctx, ast.Load)
+                and node.id in _PY_BUILTINS
+                and node.id not in SAFE_BUILTINS
+                and node.id not in bound
+            ):
+                # Would pass here and crash at the first call (NameError) in the sandbox.
+                bad(
+                    node, f"builtin {node.id!r} isn't available to mappers; available: {_AVAILABLE}"
+                )
         elif isinstance(node, (ast.FunctionDef, ast.Lambda)):
             args = node.args
             for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):

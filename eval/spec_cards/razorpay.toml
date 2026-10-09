@@ -32,3 +32,31 @@ duplicate_deliveries = true
 [errors]
 error_code_field = "code"
 reason_field = "reason"
+
+# --- integration facts (compiled into manifest.toml) ---
+
+[endpoints]
+create_intent = "POST /v1/orders"
+get_intent = "GET /v1/orders/:id"
+list_attempts = "GET /v1/orders/:id/payments"
+capture = "POST /v1/payments/:id/capture"
+refund = "POST /v1/payments/:id/refund"
+get_refund = "GET /v1/refunds/:id"
+
+[api_keys]
+test_key_prefix = "rzp_test_"
+live_key_prefix = "rzp_live_"
+prefixed_key = "key_id"
+
+[error_shape]
+message_path = "error.description"
+code_path = "error.code"
+reason_path = "error.reason"
+
+[checkout_return]
+intent_param = "razorpay_order_id"
+attempt_param = "razorpay_payment_id"
+signature_param = "razorpay_signature"
+signed_message = "intent_id|payment_id"
+signature_scheme = "hmac_sha256_hex"
+signing_key = "api_key_secret"

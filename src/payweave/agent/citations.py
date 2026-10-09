@@ -13,9 +13,9 @@ by string matching; that's for the human reviewer.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 
-from payweave.agent.spec_card import Section
+from payweave.agent.spec_card import Section, SpecCard
 
 _MARKUP = re.compile(r"[*`\\]|\[|\]")
 _SPACE = re.compile(r"\s+")
@@ -50,6 +50,28 @@ def check_section(section: Section, chunks: Mapping[str, str]) -> list[str]:
         ):
             problems.append(f"{name}: {fact.value!r} doesn't appear in any cited quote")
         if (
+            name in section.JSON_STRINGS
+            and isinstance(fact.value, str)
+            and quotes
+            and not any('"' + normalize(fact.value) in q for q in quotes)
+        ):
+            problems.append(
+                f"{name}: quote it as it appears in a sample response body, inside its JSON "
+                'quotes (e.g. "message": "..."), not from an explanation of the error'
+            )
+        if name in section.PATHS and isinstance(fact.value, str) and quotes:
+            # As a key (`"error": {`), not just somewhere ("BAD_REQUEST_ERROR" isn't `error`).
+            missing = [
+                seg
+                for seg in fact.value.split(".")
+                if not any(re.search(rf'"{re.escape(seg.lower())}"\s*:', q) for q in quotes)
+            ]
+            if missing:
+                problems.append(
+                    f"{name}: {', '.join(missing)} not a JSON key in any cited quote; quote the "
+                    "sample body including its enclosing keys"
+                )
+        if (
             name in section.ENDPOINT_EVIDENCE
             and fact.value is True
             and quotes
@@ -61,3 +83,24 @@ def check_section(section: Section, chunks: Mapping[str, str]) -> list[str]:
                 "it isn't true"
             )
     return problems
+
+
+def recheck_card(
+    card: SpecCard, chunks_by_ref: Callable[[Iterable[str]], Mapping[str, str]]
+) -> tuple[SpecCard, list[str]]:
+    """Re-run today's checks on a saved card; fields that no longer pass become null.
+
+    Cards from earlier runs were accepted under the rules of their day. Before a
+    card is compiled, every citation is checked again against the stored docs.
+    """
+    data = card.model_dump(mode="json")
+    nulled: list[str] = []
+    for name, section in card:
+        if not isinstance(section, Section):
+            continue
+        refs = {c.ref for fact in section.cited_fields().values() for c in fact.citations}
+        for problem in check_section(section, chunks_by_ref(sorted(refs))):
+            field = problem.split(":", 1)[0]
+            data[name][field] = {"value": None, "citations": []}
+            nulled.append(f"{name}.{problem}")
+    return SpecCard.model_validate(data), nulled

@@ -105,16 +105,30 @@ class Auth(_Strict):
 
 
 class LiveGuard(_Strict):
-    """Refuse live credentials unless the instance sets ``allow_live``."""
+    """Refuse live credentials unless the instance sets ``allow_live``.
+
+    ``test_pattern`` (preferred, fails closed): the credential must look like a test key.
+    ``live_pattern``: the credential must not look like a live key.
+    """
 
     credential: Name
-    live_pattern: str
+    live_pattern: str | None = None
+    test_pattern: str | None = None
 
-    @field_validator("live_pattern")
-    @classmethod
-    def _compiles(cls, value: str) -> str:
-        re.compile(value)
-        return value
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.live_pattern is None and self.test_pattern is None:
+            raise ValueError("live_guard needs test_pattern or live_pattern")
+        for pattern in (self.live_pattern, self.test_pattern):
+            if pattern is not None:
+                re.compile(pattern)
+        return self
+
+    def refuses(self, value: str) -> bool:
+        """True if ``value`` must be treated as a live credential."""
+        if self.test_pattern is not None and not re.match(self.test_pattern, value):
+            return True
+        return self.live_pattern is not None and bool(re.match(self.live_pattern, value))
 
 
 class Ids(_Strict):

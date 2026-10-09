@@ -51,7 +51,11 @@ def describe(package: GatewayPackage) -> list[str]:
         ),
     ]
     if m.live_guard:
-        lines.append(f"  live guard    {m.live_guard.credential} ~ {m.live_guard.live_pattern}")
+        g = m.live_guard
+        rule = (
+            f"must match {g.test_pattern}" if g.test_pattern else f"must not match {g.live_pattern}"
+        )
+        lines.append(f"  live guard    {g.credential} {rule}")
     requests = [
         ("create_payment", ops.create_payment),
         ("capture", ops.capture),

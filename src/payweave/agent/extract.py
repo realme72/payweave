@@ -117,6 +117,7 @@ class SectionResult:
     input_tokens: int = 0
     output_tokens: int = 0
     out_of_budget: bool = False  # the provider's daily cap hit: later sections are skipped
+    nulled: list[str] = field(default_factory=list)  # accepted, minus fields that failed checks
 
 
 def fit_context(messages: Sequence[Message], budget_chars: int) -> list[Message]:
@@ -144,6 +145,25 @@ def _render_hits(hits: Sequence[Hit]) -> str:
 
 
 def _review(
+    cls: type[Section], arguments: Mapping[str, Any], docs: DocSource, *, salvage: bool = False
+) -> tuple[Section | None, list[str]]:
+    """Validate and check citations. With ``salvage`` (the last chance to submit), fields
+    that still fail are set to null and the rest is accepted: one unprovable field
+    shouldn't throw away the facts that did check out. Returns the nulled fields' problems."""
+    section, problems = _review_once(cls, arguments, docs)
+    if section is not None or not salvage:
+        return section, problems
+    bad = {p.split(":", 1)[0].split(".", 1)[0] for p in problems} & set(cls.model_fields)
+    if not bad or bad == set(cls.model_fields):
+        return None, problems
+    nulled = {**arguments, **{name: {"value": None, "citations": []} for name in bad}}
+    salvaged, still = _review_once(cls, nulled, docs)
+    if salvaged is None:
+        return None, problems + still
+    return salvaged, [f"nulled {p}" for p in problems]
+
+
+def _review_once(
     cls: type[Section], arguments: Mapping[str, Any], docs: DocSource
 ) -> tuple[Section | None, list[str]]:
     try:
@@ -167,6 +187,7 @@ async def extract_section(
     *,
     max_turns: int = MAX_TURNS,
     log: Callable[[str], None] = lambda _: None,
+    known: Mapping[str, Any] | None = None,
 ) -> SectionResult:
     submit = Tool(
         name=f"submit_{cls.TITLE}",
@@ -179,6 +200,7 @@ async def extract_section(
             "user",
             f"Gateway: {gateway}. Fill in the `{cls.TITLE}` section ({cls.GOAL}). "
             f"The fields and what they mean are in the parameters of {submit.name}."
+            + _known_facts(cls, known or {})
             + (f"\n\n{cls.HINTS}" if cls.HINTS else ""),
         )
     ]
@@ -246,7 +268,9 @@ async def extract_section(
                 continue
             messages.append(Message("assistant", response.content, response.tool_calls))
             for call in response.tool_calls:
-                reply, accepted = _handle_call(call, submit.name, cls, docs, gateway, result, log)
+                reply, accepted = _handle_call(
+                    call, submit.name, cls, docs, gateway, result, log, last_chance=must_submit
+                )
                 messages.append(Message("tool", reply, tool_call_id=call.id))
                 if accepted is not None:
                     result.section, result.problems = accepted, []
@@ -255,6 +279,24 @@ async def extract_section(
         span.set_attributes({"payweave.turns": result.turns, "payweave.accepted": False})
         result.problems = result.problems or [f"no accepted submission in {max_turns} turns"]
         return result
+
+
+def _known_facts(cls: type[Section], known: Mapping[str, Any]) -> str:
+    """Earlier, already-checked facts this section builds on (``Section.USES``)."""
+    lines = [f"- {name} = {known[name]!r}" for name in cls.USES if known.get(name) is not None]
+    return ("\n\nAlready established (cited earlier):\n" + "\n".join(lines)) if lines else ""
+
+
+def known_facts(card: SpecCard | Mapping[str, Any]) -> dict[str, Any]:
+    """'section.field' -> value for every non-null fact in a card (model or JSON)."""
+    data = card.model_dump(mode="json") if isinstance(card, SpecCard) else card
+    return {
+        f"{section}.{name}": fact["value"]
+        for section, fields in data.items()
+        if isinstance(fields, dict)
+        for name, fact in fields.items()
+        if isinstance(fact, dict) and fact.get("value") is not None
+    }
 
 
 async def _submission_as_json(
@@ -306,6 +348,8 @@ def _handle_call(  # noqa: PLR0917
     gateway: str,
     result: SectionResult,
     log: Callable[[str], None],
+    *,
+    last_chance: bool = False,
 ) -> tuple[str, Section | None]:
     if call.arguments_error:
         return f"Error: {call.arguments_error}. Send valid JSON arguments.", None
@@ -322,10 +366,13 @@ def _handle_call(  # noqa: PLR0917
         log(f"  search: {query!r}")
         return _render_hits(hits), None
     if call.name == submit_name:
-        section, problems = _review(cls, call.arguments, docs)
+        section, problems = _review(cls, call.arguments, docs, salvage=last_chance)
         result.problems = problems
         if section is not None:
-            log("  submitted: accepted")
+            result.nulled = problems
+            log(
+                "  submitted: accepted" + (f", nulled {len(problems)} field(s)" if problems else "")
+            )
             return "Accepted.", section
         log(f"  submitted: {len(problems)} problem(s): {problems[:3]}")
         return "Rejected. Fix these and submit again:\n- " + "\n- ".join(problems), None
@@ -353,6 +400,7 @@ async def extract_card(
     *,
     sections: Sequence[type[Section]] = SECTIONS,
     log: Callable[[str], None] = lambda _: None,
+    known: Mapping[str, Any] | None = None,
 ) -> CardRun:
     """Extract each section in turn. A failed section stays empty; it never stops the rest.
 
@@ -367,7 +415,10 @@ async def extract_card(
             results.append(SectionResult(cls.TITLE, None, problems=[out_of_budget]))
             continue
         log(f"[{cls.TITLE}]")
-        result = await extract_section(llm, docs, gateway, cls, log=log)
+        facts = dict(known or {}) | known_facts(
+            {k: v.model_dump(mode="json") for k, v in values.items() if isinstance(v, Section)}
+        )
+        result = await extract_section(llm, docs, gateway, cls, log=log, known=facts)
         if result.out_of_budget:
             out_of_budget = f"skipped: daily budget exhausted ({result.problems[0]})"
         results.append(result)
@@ -384,6 +435,7 @@ def card_json(run: CardRun) -> str:
                     "name": s.name,
                     "accepted": s.section is not None,
                     "problems": s.problems,
+                    "nulled": s.nulled,
                     "turns": s.turns,
                     "searches": s.searches,
                     "tokens": {"input": s.input_tokens, "output": s.output_tokens},

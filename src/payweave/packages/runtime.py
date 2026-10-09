@@ -186,9 +186,11 @@ def config_model(manifest: Manifest) -> type[BaseModel]:
             if any(isinstance(v, SecretStr) and not v.get_secret_value() for v in values):
                 raise ValueError(f"{name} must not be empty")
         if guard is not None:
-            value = str(getattr(self, guard.credential) or "")
-            if re.match(guard.live_pattern, value) and not getattr(self, "allow_live"):  # noqa: B009
-                raise ValueError("live credentials given but allow_live is false")
+            value = _secret(getattr(self, guard.credential))  # secret keys too (sk_live_...)
+            if guard.refuses(value) and not getattr(self, "allow_live"):  # noqa: B009
+                raise ValueError(
+                    f"{guard.credential} is not a test-mode credential and allow_live is false"
+                )
         return self
 
     validators: dict[str, Any] = {"_check": model_validator(mode="after")(_check)}

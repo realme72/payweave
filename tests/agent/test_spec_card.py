@@ -435,3 +435,111 @@ def test_operation_claims_need_an_endpoint_quote() -> None:
         )
         == []
     )
+
+
+async def test_dependent_sections_see_earlier_facts() -> None:
+    from payweave.agent.spec_card import Endpoints  # noqa: PLC0415
+
+    llm = ScriptedLLM(text("thinking"), *[text("still thinking")] * 10)
+    await extract_card(
+        llm,
+        FakeDocs(),
+        "razorpay",
+        sections=(Endpoints,),
+        known={"payment_flow.intent_object": "order", "refunds.partial_refunds": True},
+    )
+    first = llm.requests[0].messages[0].content
+    assert "payment_flow.intent_object = 'order'" in first
+    assert "partial_refunds" not in first  # only what the section USES
+
+
+def test_json_string_facts_must_come_from_a_sample_body() -> None:
+    from payweave.agent.citations import check_section  # noqa: PLC0415
+    from payweave.agent.spec_card import ErrorShape  # noqa: PLC0415
+
+    ref = "razorpay:api__refunds__normal-refunds-idempotent.md#3"
+    chunk = (
+        '{"error": {"code": "BAD_REQUEST_ERROR", "description": "Different request with the '
+        'same idempotency key has already been processed.", "reason": "NA"}}\n'
+        "* description: Another refund request with different parameters has been processed "
+        "using the same idempotency key."
+    )
+
+    def shape(message: str, quote: str) -> ErrorShape:
+        path = {
+            "value": "error.code",
+            "citations": [{"ref": ref, "quote": '{"error": {"code": "BAD_REQ'}],
+        }
+        return ErrorShape.model_validate(
+            {
+                "message_path": {"value": None, "citations": []},
+                "code_path": path,
+                "reason_path": {"value": None, "citations": []},
+                "idempotency_conflict_message": {
+                    "value": message,
+                    "citations": [{"ref": ref, "quote": quote}],
+                },
+            }
+        )
+
+    explained = (
+        "Another refund request with different parameters has been processed using the same "
+        "idempotency key."
+    )
+    bad = check_section(shape(explained, "* description: " + explained), {ref: chunk})
+    assert any("inside its JSON quotes" in p for p in bad)
+    sample = "Different request with the same idempotency key has already been processed."
+    assert check_section(shape(sample, f'"description": "{sample}"'), {ref: chunk}) == []
+
+
+async def test_last_chance_nulls_failing_fields_and_keeps_the_rest() -> None:
+    bad_header = {**WEBHOOKS_OK, "event_id_header": fact("x-made-up-id", DUP, "made up quote here")}
+    # Not the last turn: the whole submission is rejected so the model can fix it.
+    llm = ScriptedLLM(tool("submit_webhooks", bad_header), tool("submit_webhooks", WEBHOOKS_OK))
+    result = await extract_section(llm, FakeDocs(), "razorpay", Webhooks, max_turns=4)
+    assert isinstance(result.section, Webhooks)
+    assert result.section.event_id_header.value == "x-razorpay-event-id"
+    assert result.nulled == []
+
+    # Last chance: the failing field becomes null, the checked facts are kept.
+    llm = ScriptedLLM(tool("submit_webhooks", bad_header))
+    result = await extract_section(llm, FakeDocs(), "razorpay", Webhooks, max_turns=1)
+    assert isinstance(result.section, Webhooks)
+    assert result.section.event_id_header.value is None
+    assert result.section.signature_header.value == "X-Razorpay-Signature"
+    assert result.nulled
+    assert result.nulled[0].startswith("nulled event_id_header")
+
+
+def test_recheck_nulls_facts_that_fail_todays_rules() -> None:
+    from payweave.agent.citations import recheck_card  # noqa: PLC0415
+
+    stale = {**WEBHOOKS_OK, "event_id_header": fact("x-made-up-id", DUP, "made up quote here")}
+    card = SpecCard.model_validate({"gateway": "razorpay", "webhooks": stale})
+    checked, nulled = recheck_card(card, lambda refs: {r: CHUNKS[r] for r in refs if r in CHUNKS})
+    assert checked.webhooks is not None
+    assert checked.webhooks.event_id_header.value is None
+    assert checked.webhooks.signature_header.value == "X-Razorpay-Signature"
+    assert nulled[0].startswith("webhooks.event_id_header:")
+
+
+def test_path_segments_must_be_json_keys() -> None:
+    from payweave.agent.spec_card import ErrorShape  # noqa: PLC0415
+
+    ref = "razorpay:errors.md#9"
+    chunk = '{"error": {"code": "BAD_REQUEST_ERROR", "description": "x"}}'
+
+    def shape(quote: str) -> ErrorShape:
+        return ErrorShape.model_validate(
+            {
+                "message_path": {"value": None, "citations": []},
+                "code_path": {"value": "error.code", "citations": [{"ref": ref, "quote": quote}]},
+                "reason_path": {"value": None, "citations": []},
+                "idempotency_conflict_message": {"value": None, "citations": []},
+            }
+        )
+
+    assert check_section(shape('{"error": {"code": "BAD_REQUEST_ERROR"'), {ref: chunk}) == []
+    inner_only = check_section(shape('"code": "BAD_REQUEST_ERROR"'), {ref: chunk})
+    assert inner_only
+    assert "error not a JSON key" in inner_only[0]
