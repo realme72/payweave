@@ -57,6 +57,8 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Signed, agent-written packages: reformatting would break the signature. G1/G2 gate them.
+extend-exclude = ["packages/*/generated"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "PL", "PT", "TRY", "DTZ"]

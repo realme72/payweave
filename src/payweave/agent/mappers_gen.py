@@ -50,6 +50,7 @@ from payweave.packages.sandbox import check_source
 
 MAX_TURNS = 10
 MAX_SEARCHES = 6
+MAX_REPAIR_SEARCHES = 2  # a repair already has its code and the exact findings
 CONTEXT_BUDGET_CHARS = 12_000
 
 HEADER = '''"""Gateway mappers, written by the PayWeave integration agent. Pure functions only."""
@@ -393,10 +394,11 @@ async def write_mapper(
             + "\n- ".join(findings[:12])
             + "\nFix them, checking the docs where needed, and submit the whole function."
         )
+    max_searches = MAX_SEARCHES if repair is None else MAX_REPAIR_SEARCHES
     messages: list[Message] = [Message("user", task)]
     for turn in range(1, max_turns + 1):
         result.turns = turn
-        must_submit = turn >= max_turns - 1 or len(result.searches) >= MAX_SEARCHES
+        must_submit = turn >= max_turns - 1 or len(result.searches) >= max_searches
         tools = (SUBMIT_TOOL,) if must_submit else (SEARCH_TOOL, SUBMIT_TOOL)
         try:
             response = await complete_with_retry(

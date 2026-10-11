@@ -46,7 +46,7 @@ PRESETS: dict[str, Preset] = {
     "gemini": Preset(
         "https://generativelanguage.googleapis.com/v1beta/openai/",
         "GEMINI_API_KEY",
-        "gemini-2.5-flash",
+        "gemini-3.8-flash",
     ),
     "ollama": Preset("http://localhost:11434/v1/", None, "qwen2.5-coder:7b"),
     "openrouter": Preset("https://openrouter.ai/api/v1/", "OPENROUTER_API_KEY", "openrouter/auto"),
@@ -58,7 +58,7 @@ _STOP = {
     "length": StopReason.MAX_TOKENS,
     "content_filter": StopReason.CONTENT_FILTER,
 }
-_DAILY = re.compile(r"per day|\bTPD\b|\bRPD\b|daily", re.IGNORECASE)
+_DAILY = re.compile(r"per ?day|\bTPD\b|\bRPD\b|daily", re.IGNORECASE)
 _tracer = trace.get_tracer("payweave.llm")
 
 
@@ -178,7 +178,7 @@ class OpenAICompatibleProvider:
                 detail,
                 provider=self._name,
                 retry_after=float(retry_after) if retry_after else None,
-                daily_exhausted=bool(_DAILY.search(detail)),
+                daily_exhausted=bool(_DAILY.search(r.text)),  # Gemini names it in details
             )
         if r.status_code in (401, 403):
             raise LLMAuthError(detail, provider=self._name, status=r.status_code)
@@ -201,18 +201,19 @@ def _message(m: Message) -> dict[str, Any]:
         return {"role": "tool", "tool_call_id": m.tool_call_id, "content": m.content}
     msg: dict[str, Any] = {"role": m.role, "content": m.content or None}
     if m.tool_calls:
-        msg["tool_calls"] = [
-            {
-                "id": c.id,
-                "type": "function",
-                "function": {
-                    "name": c.name,
-                    "arguments": c.raw_arguments or json.dumps(c.arguments),
-                },
-            }
-            for c in m.tool_calls
-        ]
+        msg["tool_calls"] = [_call_out(c) for c in m.tool_calls]
     return msg
+
+
+def _call_out(c: ToolCall) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "id": c.id,
+        "type": "function",
+        "function": {"name": c.name, "arguments": c.raw_arguments or json.dumps(c.arguments)},
+    }
+    if c.extra:
+        out["extra_content"] = c.extra
+    return out
 
 
 def _parse(data: dict[str, Any], *, provider: str, model: str) -> LLMResponse:
@@ -250,12 +251,16 @@ def _tool_call(raw: dict[str, Any]) -> ToolCall:
         arguments=arguments if isinstance(arguments, dict) else {},
         raw_arguments=text if isinstance(text, str) else json.dumps(text),
         arguments_error=error,
+        extra=raw.get("extra_content") or None,
     )
 
 
 def _error_detail(r: httpx.Response) -> str:
     try:
-        err = r.json().get("error", {})
+        body = r.json()
+        if isinstance(body, list) and body:  # Gemini wraps the error in a list
+            body = body[0]
+        err = body.get("error", {})
         message = err.get("message") if isinstance(err, dict) else str(err)
     except (ValueError, AttributeError):
         message = None

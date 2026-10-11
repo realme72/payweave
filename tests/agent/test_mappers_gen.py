@@ -300,3 +300,16 @@ def test_problems_in_other_mappers_are_not_blamed_on_this_one() -> None:
     problems = check_submission("refund_body", broken, {"refund": REFUND}, typecheck=False)
     assert problems
     assert problems[0].startswith("sandbox: line 3: builtin 'float'")
+
+
+async def test_repairs_search_less_before_submitting() -> None:
+    llm = ScriptedLLM(
+        tool("search_docs", {"query": "a"}),
+        tool("search_docs", {"query": "b"}),
+        tool("submit_code", {"code": REFUND_BODY}),
+    )
+    await write_mapper(
+        llm, FakeDocs(), "razorpay", "refund_body", manifest={}, facts={}, accepted={},
+        repair=(REFUND_BODY, ["refunds: something"]), typecheck=False,
+    )  # fmt: skip
+    assert llm.requests[2].require_tool == "submit_code"

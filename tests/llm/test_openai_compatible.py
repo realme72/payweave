@@ -108,6 +108,38 @@ async def test_tool_call_round_trip(
         "tool_call_id": "call_1",
         "content": "chunk: at least INR 1.00",
     }
+    assert "extra_content" not in history[1]["tool_calls"][0]
+
+
+async def test_provider_extra_content_is_sent_back(
+    router: respx.MockRouter, groq: OpenAICompatibleProvider
+) -> None:
+    extra = {"google": {"thought_signature": "sig=="}}
+    call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "search_docs", "arguments": "{}"},
+        "extra_content": extra,
+    }
+    route = router.post("/chat/completions").mock(
+        side_effect=[
+            httpx.Response(200, json=completion({"tool_calls": [call]}, "tool_calls")),
+            httpx.Response(200, json=completion({"content": "ok"})),
+        ]
+    )
+    first = await groq.complete(LLMRequest(messages=(Message("user", "q"),), tools=(SEARCH,)))
+    await groq.complete(
+        LLMRequest(
+            messages=(
+                Message("user", "q"),
+                Message("assistant", tool_calls=first.tool_calls),
+                Message("tool", "r", tool_call_id="call_1"),
+            ),
+            tools=(SEARCH,),
+        )
+    )
+    history = json.loads(route.calls.last.request.content)["messages"]
+    assert history[1]["tool_calls"][0]["extra_content"] == extra
 
 
 async def test_required_tool_is_sent_as_tool_choice(
@@ -192,6 +224,25 @@ async def test_errors_are_classified_and_keep_the_providers_words(  # noqa: PLR0
         assert exc.value.daily_exhausted is daily  # type: ignore[attr-defined]
     if headers:
         assert exc.value.retry_after == 7.0  # type: ignore[attr-defined]
+
+
+async def test_gemini_daily_quota_is_recognised(
+    router: respx.MockRouter, groq: OpenAICompatibleProvider
+) -> None:
+    body = [
+        {
+            "error": {
+                "code": 429,
+                "message": "You exceeded your current quota.",
+                "details": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}],
+            }
+        }
+    ]
+    router.post("/chat/completions").respond(429, json=body)
+    with pytest.raises(LLMRateLimitError) as exc:
+        await groq.complete(LLMRequest(messages=(Message("user", "x"),)))
+    assert "You exceeded your current quota." in str(exc.value)
+    assert exc.value.daily_exhausted
 
 
 async def test_network_failure_is_unavailable(

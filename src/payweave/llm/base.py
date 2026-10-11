@@ -31,6 +31,8 @@ class ToolCall:
     # The model sometimes emits invalid JSON; keep it so the agent can say so.
     raw_arguments: str = ""
     arguments_error: str | None = None
+    # Opaque provider data to send back with the call (Gemini's thought_signature).
+    extra: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)

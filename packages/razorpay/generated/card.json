@@ -1,0 +1,382 @@
+{
+  "gateway": "razorpay",
+  "basics": {
+    "api_base_url": {
+      "value": "https://api.razorpay.com/v1",
+      "citations": [
+        {
+          "ref": "razorpay:api__understand.md#9",
+          "quote": "https://api.razorpay.com/v1/payments/pay_DG4ZdRK8ZnXC3k"
+        }
+      ]
+    },
+    "auth_scheme": {
+      "value": "basic",
+      "citations": [
+        {
+          "ref": "razorpay:api__understand.md#9",
+          "quote": "curl -u [YOUR_KEY_ID]:[YOUR_KEY_SECRET]"
+        }
+      ]
+    },
+    "amount_unit": {
+      "value": "minor_unit",
+      "citations": [
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#16",
+          "quote": "`amount` _mandatory_\n: `integer` Payment amount in the smallest currency subunit."
+        }
+      ]
+    }
+  },
+  "payment_flow": {
+    "intent_object": {
+      "value": "order",
+      "citations": [
+        {
+          "ref": "razorpay:api__orders__create.md#0",
+          "quote": "you must create a new Order on your server and pass the new `order_id` to Checkout"
+        }
+      ]
+    },
+    "customer_completion": {
+      "value": "hosted_checkout",
+      "citations": [
+        {
+          "ref": "razorpay:api__orders__create.md#0",
+          "quote": "you must create a new Order on your server and pass the new `order_id` to Checkout"
+        },
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#11",
+          "quote": "Add the Pay button on your web page using the checkout code. You can use the handler function or callback URL."
+        }
+      ]
+    }
+  },
+  "capture": {
+    "manual_capture": {
+      "value": true,
+      "citations": [
+        {
+          "ref": "razorpay:api__payments__capture.md#0",
+          "quote": "**POST** `/v1/payments/:id/capture`\n\nUse this endpoint to change the payment status from `authorized` to `captured`."
+        }
+      ]
+    },
+    "partial_capture": {
+      "value": false,
+      "citations": [
+        {
+          "ref": "razorpay:api__payments__capture.md#12",
+          "quote": "Capture amount must be equal to the amount authorized."
+        }
+      ]
+    },
+    "void_supported": {
+      "value": null,
+      "citations": []
+    }
+  },
+  "refunds": {
+    "partial_refunds": {
+      "value": true,
+      "citations": [
+        {
+          "ref": "razorpay:api__refunds__create-normal.md#4",
+          "quote": "For a **partial refund**, enter a value lesser than the payment amount."
+        }
+      ]
+    },
+    "multiple_refunds": {
+      "value": true,
+      "citations": [
+        {
+          "ref": "razorpay:api__refunds__fetch-multiple-refund-payment.md#0",
+          "quote": "Use this endpoint to retrieve multiple refunds for a payment."
+        }
+      ]
+    },
+    "idempotency_header": {
+      "value": "X-Refund-Idempotency",
+      "citations": [
+        {
+          "ref": "razorpay:api__refunds__normal-refunds-idempotent.md#0",
+          "quote": "To make a normal refund request idempotent, add the header `X-Refund-Idempotency` to the request and pass an idempotency key against it."
+        }
+      ]
+    }
+  },
+  "webhooks": {
+    "signature_header": {
+      "value": "X-Razorpay-Signature",
+      "citations": [
+        {
+          "ref": "razorpay:webhooks__validate-test.md#6",
+          "quote": "`X-Razorpay-Signature` : The hash signature is calculated using HMAC with SHA256 algorithm; with your webhook secret set as the key and the webhook request body as the message."
+        }
+      ]
+    },
+    "signature_algorithm": {
+      "value": "hmac_sha256_hex",
+      "citations": [
+        {
+          "ref": "razorpay:webhooks__validate-test.md#6",
+          "quote": "`X-Razorpay-Signature` : The hash signature is calculated using HMAC with SHA256 algorithm; with your webhook secret set as the key and the webhook request body as the message."
+        }
+      ]
+    },
+    "signing_secret": {
+      "value": "webhook_secret",
+      "citations": [
+        {
+          "ref": "razorpay:webhooks__setup-edit-payments.md#2",
+          "quote": "Enter a **Secret** for the webhook endpoint. The secret is used to validate that the webhook is from Razorpay."
+        }
+      ]
+    },
+    "event_id_header": {
+      "value": "x-razorpay-event-id",
+      "citations": [
+        {
+          "ref": "razorpay:webhooks__validate-test.md#8",
+          "quote": "You can identify the duplicate webhooks using the `x-razorpay-event-id` header. The value for this header is unique per event."
+        }
+      ]
+    },
+    "ordered_delivery": {
+      "value": false,
+      "citations": [
+        {
+          "ref": "razorpay:webhooks__validate-test.md#9",
+          "quote": "Ideally, you should receive a webhook in the order in which the webhook events occur. However, you may not always receive the webhooks in the order."
+        }
+      ]
+    },
+    "duplicate_deliveries": {
+      "value": true,
+      "citations": [
+        {
+          "ref": "razorpay:webhooks__best-practices.md#4",
+          "quote": "There could be scenarios where your endpoint might receive the same webhook event multiple times. This is an expected behaviour based on the webhook design."
+        },
+        {
+          "ref": "razorpay:webhooks__best-practices.md#4",
+          "quote": "You could be receiving the same events multiple times as Razorpay follows at-least-once delivery semantics."
+        }
+      ]
+    }
+  },
+  "errors": {
+    "error_code_field": {
+      "value": "code",
+      "citations": [
+        {
+          "ref": "razorpay:errors.md#1",
+          "quote": "The error response contains `code`, `description`, `field`, `source`, `step`, `reason` and `metadata` parameters that help diagnose and solve the error."
+        }
+      ]
+    },
+    "reason_field": {
+      "value": "reason",
+      "citations": [
+        {
+          "ref": "razorpay:errors.md#2",
+          "quote": "\"reason\": \"invalid_otp\""
+        }
+      ]
+    }
+  },
+  "endpoints": {
+    "create_intent": {
+      "value": "POST /v1/orders",
+      "citations": [
+        {
+          "ref": "razorpay:api__orders__create.md#0",
+          "quote": "POST /v1/orders"
+        }
+      ]
+    },
+    "get_intent": {
+      "value": "GET /v1/orders/:id",
+      "citations": [
+        {
+          "ref": "razorpay:api__orders__fetch-with-id.md#0",
+          "quote": "GET /v1/orders/:id"
+        }
+      ]
+    },
+    "list_attempts": {
+      "value": "GET /v1/orders/:id/payments",
+      "citations": [
+        {
+          "ref": "razorpay:api__orders__fetch-payments.md#0",
+          "quote": "GET /v1/orders/:id/payments"
+        }
+      ]
+    },
+    "capture": {
+      "value": "POST /v1/payments/:id/capture",
+      "citations": [
+        {
+          "ref": "razorpay:api__payments__capture.md#1",
+          "quote": "POST /v1/payments/:id/capture"
+        }
+      ]
+    },
+    "refund": {
+      "value": "POST /v1/payments/:id/refund",
+      "citations": [
+        {
+          "ref": "razorpay:api__refunds__create-normal.md#0",
+          "quote": "POST /v1/payments/:id/refund"
+        }
+      ]
+    },
+    "get_refund": {
+      "value": "GET /v1/refunds/:id",
+      "citations": [
+        {
+          "ref": "razorpay:api__refunds__fetch-with-id.md#0",
+          "quote": "GET /v1/refunds/:id"
+        }
+      ]
+    }
+  },
+  "ids": {
+    "intent_id_example": {
+      "value": "order_MLXS6VLbhKH7i1",
+      "citations": [
+        {
+          "ref": "razorpay:api__payments__fetch-with-id.md#3",
+          "quote": "\"order_id\": \"order_MLXS6VLbhKH7i1\""
+        }
+      ]
+    },
+    "attempt_id_example": {
+      "value": "pay_MT3PgKGazkDUUM",
+      "citations": [
+        {
+          "ref": "razorpay:api__payments__fetch-with-id.md#3",
+          "quote": "\"id\": \"pay_MT3PgKGazkDUUM\""
+        }
+      ]
+    },
+    "refund_id_example": {
+      "value": "rfnd_FgRAHdNOM4ZVbO",
+      "citations": [
+        {
+          "ref": "razorpay:api__refunds__entity.md#1",
+          "quote": "\"id\":\"rfnd_FgRAHdNOM4ZVbO\""
+        }
+      ]
+    }
+  },
+  "api_keys": {
+    "test_key_prefix": {
+      "value": null,
+      "citations": []
+    },
+    "live_key_prefix": {
+      "value": null,
+      "citations": []
+    },
+    "prefixed_key": {
+      "value": null,
+      "citations": []
+    }
+  },
+  "error_shape": {
+    "message_path": {
+      "value": "error.description",
+      "citations": [
+        {
+          "ref": "razorpay:errors.md#2",
+          "quote": "\"error\": {\n    \"code\": \"BAD_REQUEST_ERROR\",\n    \"description\": \"Authentication failed due to incorrect otp\","
+        }
+      ]
+    },
+    "code_path": {
+      "value": "error.code",
+      "citations": [
+        {
+          "ref": "razorpay:errors.md#2",
+          "quote": "\"error\": {\n    \"code\": \"BAD_REQUEST_ERROR\",\n    \"description\": \"Authentication failed due to incorrect otp\","
+        }
+      ]
+    },
+    "reason_path": {
+      "value": "error.reason",
+      "citations": [
+        {
+          "ref": "razorpay:errors.md#2",
+          "quote": "\"error\": {\n    \"code\": \"BAD_REQUEST_ERROR\",\n    \"description\": \"Authentication failed due to incorrect otp\",\n    \"field\": null,\n    \"source\": \"customer\",\n    \"step\": \"payment_authentication\",\n    \"reason\": \"invalid_otp\","
+        }
+      ]
+    },
+    "idempotency_conflict_message": {
+      "value": "Different request with the same idempotency key has already been processed.",
+      "citations": [
+        {
+          "ref": "razorpay:api__refunds__normal-refunds-idempotent.md#3",
+          "quote": "\"description\": \"Different request with the same idempotency key has already been processed.\","
+        }
+      ]
+    }
+  },
+  "checkout_return": {
+    "intent_param": {
+      "value": "razorpay_order_id",
+      "citations": [
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#38",
+          "quote": "\"razorpay_order_id\": \"order_9A33XWu170gUtm\""
+        }
+      ]
+    },
+    "attempt_param": {
+      "value": "razorpay_payment_id",
+      "citations": [
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#38",
+          "quote": "\"razorpay_payment_id\": \"pay_29QQoUBi66xm2f\""
+        }
+      ]
+    },
+    "signature_param": {
+      "value": "razorpay_signature",
+      "citations": [
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#38",
+          "quote": "\"razorpay_signature\": \"9ef4dffbfd84f1318f6739a3ce19f9d85851857ae648f114332d8401e0949a3d\""
+        }
+      ]
+    },
+    "signed_message": {
+      "value": "intent_id|payment_id",
+      "citations": [
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#39",
+          "quote": "generated_signature = hmac_sha256(order_id + \"|\" + razorpay_payment_id, secret);"
+        }
+      ]
+    },
+    "signature_scheme": {
+      "value": "hmac_sha256_hex",
+      "citations": [
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#39",
+          "quote": "Use the SHA256 algorithm, the `razorpay_payment_id` and the `order_id` to construct a HMAC hex digest"
+        }
+      ]
+    },
+    "signing_key": {
+      "value": "api_key_secret",
+      "citations": [
+        {
+          "ref": "razorpay:payments__payment-gateway__web-integration__standard__integration-steps.md#39",
+          "quote": "`key_secret`: Available in your server. The `key_secret` that was generated from the Dashboard"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,109 @@
+schema_version = 1
+gateway = "razorpay"
+version = "1"
+flags = [
+    "manual_capture",
+    "partial_refund",
+    "multiple_refunds",
+]
+
+[api]
+base_url = "https://api.razorpay.com/v1/"
+allowed_hosts = [
+    "api.razorpay.com",
+]
+
+[auth]
+scheme = "basic"
+username = "key_id"
+password = "key_secret"
+
+[credentials.key_id]
+public = true
+
+[credentials.key_secret]
+secret = true
+
+[credentials.webhook_secrets]
+secret = true
+multiple = true
+required = false
+
+[live_guard]
+credential = "key_id"
+test_pattern = "^rzp_test_"
+
+[ids]
+intent = "^order_[A-Za-z0-9]+$"
+attempt = "^pay_[A-Za-z0-9]+$"
+refund = "^rfnd_[A-Za-z0-9]+$"
+
+[operations.create_payment]
+method = "POST"
+path = "orders"
+
+[operations.get_payment.primary]
+method = "GET"
+path = "orders/{intent_id}"
+
+[operations.get_payment.related.payments]
+method = "GET"
+path = "orders/{intent_id}/payments"
+
+[operations.capture]
+method = "POST"
+path = "payments/{attempt_id}/capture"
+
+[operations.refund]
+method = "POST"
+path = "payments/{attempt_id}/refund"
+idempotency_header = "X-Refund-Idempotency"
+
+[operations.get_refund]
+method = "GET"
+path = "refunds/{refund_id}"
+
+[errors]
+message_paths = [
+    "error.description",
+]
+code_paths = [
+    "error.reason",
+    "error.code",
+]
+
+[[errors.rules]]
+category = "duplicate_request"
+message_contains = "Different request with the same idempotency key has already been processed."
+
+[webhooks]
+scheme = "hmac_sha256_hex"
+signature_header = "X-Razorpay-Signature"
+event_id_header = "x-razorpay-event-id"
+secrets_credential = "webhook_secrets"
+
+[checkout_return]
+scheme = "hmac_sha256_hex"
+message_template = "{razorpay_order_id}|{razorpay_payment_id}"
+key_credential = "key_secret"
+signature_param = "razorpay_signature"
+intent_param = "razorpay_order_id"
+
+[settings.automatic_capture_expiry_minutes]
+type = "int"
+default = 12
+minimum = 12
+
+[settings.manual_capture_expiry_minutes]
+type = "int"
+default = 7200
+minimum = 12
+maximum = 7200
+
+[settings.uncaptured_refund_speed]
+type = "str"
+default = "normal"
+choices = [
+    "normal",
+    "optimum",
+]

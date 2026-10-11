@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "package": {
+    "gateway": "razorpay",
+    "version": "1",
+    "sha256": "594f037a561b5e394d84fc6bd2a84ae61894504b3cf5a9665f8a013bab2bbc7b"
+  },
+  "generated_at": "2026-10-09T11:19:57+00:00",
+  "generator": {
+    "payweave": "0.1.0",
+    "python": "3.13.13"
+  },
+  "seconds": 0.75,
+  "promotable": true,
+  "required_gates": [
+    "G1",
+    "G2",
+    "G5",
+    "G7"
+  ],
+  "failed_gates": [],
+  "gates": {
+    "G1": {
+      "status": "pass",
+      "summary": "manifest schema + mapper signatures valid; mappers.py passes mypy --strict"
+    },
+    "G2": {
+      "status": "pass",
+      "summary": "mapper AST allowlist + restricted builtins: no findings; hosts limited to api.razorpay.com",
+      "not_yet_run": [
+        "bandit",
+        "semgrep"
+      ]
+    },
+    "G3": {
+      "status": "not_run",
+      "summary": "citation gate not wired to packages yet"
+    },
+    "G4": {
+      "status": "not_run",
+      "summary": "no OpenAPI spec for this gateway"
+    },
+    "G5": {
+      "status": "pass",
+      "summary": "18 contract tests passed, 1 skipped (capability not declared)",
+      "counts": {
+        "passed": 18,
+        "skipped": 1
+      }
+    },
+    "G6": {
+      "status": "not_run",
+      "summary": "needs test-mode keys and a person at checkout: `pytest -m sandbox` (tests/gateways/<gateway>/test_sandbox.py)"
+    },
+    "G7": {
+      "status": "pass",
+      "summary": "10/10 scenarios identical to the hand-written gateway (57 steps, 67 HTTP requests compared)",
+      "scenarios": 10,
+      "identical": 10,
+      "steps": 57,
+      "requests_compared": 67,
+      "seconds": 0.089,
+      "results": [
+        {
+          "scenario": "capabilities",
+          "identical": true,
+          "steps": 1
+        },
+        {
+          "scenario": "create_and_read",
+          "identical": true,
+          "steps": 2
+        },
+        {
+          "scenario": "automatic_capture",
+          "identical": true,
+          "steps": 3
+        },
+        {
+          "scenario": "manual_capture",
+          "identical": true,
+          "steps": 6
+        },
+        {
+          "scenario": "failed_then_paid",
+          "identical": true,
+          "steps": 5
+        },
+        {
+          "scenario": "refunds",
+          "identical": true,
+          "steps": 11
+        },
+        {
+          "scenario": "refund_before_capture",
+          "identical": true,
+          "steps": 5
+        },
+        {
+          "scenario": "bad_inputs",
+          "identical": true,
+          "steps": 9
+        },
+        {
+          "scenario": "webhooks",
+          "identical": true,
+          "steps": 9
+        },
+        {
+          "scenario": "checkout_return",
+          "identical": true,
+          "steps": 6
+        }
+      ]
+    }
+  }
+}
