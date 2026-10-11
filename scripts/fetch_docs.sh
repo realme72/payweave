@@ -9,7 +9,7 @@ for dir in */; do
   changed=0
   while read -r url; do
     [[ -z "$url" ]] && continue
-    file=$(echo "$url" | sed 's#https://[^/]*/docs/build/llm-docs/##; s#/#__#g')
+    file=$(echo "$url" | sed -E 's#https://[^/]*/docs/(build/llm-docs/)?##; s#/#__#g')
     curl -sfL "$url" -o "$gw/$file"
     new=$(shasum -a 256 "$gw/$file" | cut -c1-16)
     old=$(awk -F'\t' -v f="$file" '$1==f {print $3}' "$gw/SNAPSHOT.tsv")

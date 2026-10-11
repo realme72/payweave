@@ -28,7 +28,8 @@ from typing import Any
 from payweave.agent.extract import card_json, extract_card, known_facts
 from payweave.agent.reference import FieldScore, Verdict, load_reference, score
 from payweave.agent.spec_card import SECTIONS, SpecCard
-from payweave.llm import PRESETS, OpenAICompatibleProvider
+from payweave.llm import PRESETS
+from payweave.llm.fallback import provider_for
 
 RUNS = Path(".runs/spec-cards")
 REFERENCES = Path("eval/spec_cards")
@@ -72,7 +73,7 @@ async def run_spec_card(
     from payweave.knowledge.store import KnowledgeStore  # noqa: PLC0415
 
     sections = [s for s in SECTIONS if not only or s.TITLE in only]
-    llm = OpenAICompatibleProvider.from_preset(provider, model=model)
+    llm = provider_for(provider, model)
     try:
         with KnowledgeStore(FastEmbedEmbedder()) as kb:
             known = known_facts(merge_cards(gateway, known_from)) if known_from else None
@@ -213,7 +214,7 @@ async def run_build(
             from payweave.knowledge.store import KnowledgeStore  # noqa: PLC0415
 
             print(f"extracting {len(missing)} missing section(s): {', '.join(missing)}")
-            llm = OpenAICompatibleProvider.from_preset(provider, model=model)
+            llm = provider_for(provider, model)
             try:
                 with KnowledgeStore(FastEmbedEmbedder()) as kb:
                     app = await _graph(gateway, thread, saver, llm, kb)
@@ -263,7 +264,7 @@ async def review_card(
         from payweave.knowledge.embedder import FastEmbedEmbedder  # noqa: PLC0415
         from payweave.knowledge.store import KnowledgeStore  # noqa: PLC0415
 
-        llm = OpenAICompatibleProvider.from_preset(provider, model=model)
+        llm = provider_for(provider, model)
         try:
             with KnowledgeStore(FastEmbedEmbedder()) as kb:
                 app = await _graph(gateway, thread, saver, llm, kb, _settings(settings_from))
@@ -315,7 +316,7 @@ async def run_mappers(
         print(f"settings copied from {settings_from} ({len(manifest['settings'])})")
     card = json.loads((draft / "card.json").read_text())
     facts = {k: v for k, v in known_facts(card).items() if k.split(".")[0] in MAPPER_FACT_SECTIONS}
-    llm = OpenAICompatibleProvider.from_preset(provider, model=model)
+    llm = provider_for(provider, model)
     try:
         with KnowledgeStore(FastEmbedEmbedder()) as kb:
             out = await build_package(
@@ -345,7 +346,10 @@ def main() -> None:
     p_card = sub.add_parser("spec-card", help="extract a gateway's Spec Card from its docs")
     p_card.add_argument("gateway")
     p_card.add_argument("--provider", choices=sorted(PRESETS), default="groq")
-    p_card.add_argument("--model", help="override the provider's default model")
+    p_card.add_argument(
+        "--model",
+        help="override the provider's default model; a,b,c moves on when one's daily quota is used",
+    )
     p_card.add_argument(
         "--section", action="append", choices=[s.TITLE for s in SECTIONS], default=[]
     )

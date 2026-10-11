@@ -287,12 +287,44 @@ def test_fit_context_drops_oldest_search_results_first() -> None:
     assert kept == [False, False, False, False, False, True]
 
 
+def test_fit_context_trims_latest_results_that_alone_are_too_big() -> None:
+    asked = Message("assistant", "", ())
+    big = [Message("tool", '<passage ref="c">' + "z" * 5_000, tool_call_id=str(i)) for i in (1, 2)]
+    fitted = fit_context([Message("user", "q"), asked, *big], 4_000)
+    assert all(m.content.startswith('<passage ref="c">zzz') for m in fitted[2:])
+    assert all("search more specifically" in m.content for m in fitted[2:])
+    assert sum(len(m.content) for m in fitted) < 4_500
+
+
+async def test_request_too_large_is_retried_with_less_context() -> None:
+    from payweave.agent.extract import complete_fitted  # noqa: PLC0415
+
+    too_big = LLMBadRequestError("HTTP 413: Request too large", provider="s", status=413)
+    llm = ScriptedLLM(too_big, text("ok"))
+    asked = Message("assistant", "", ())
+    history = [
+        Message("user", "q"),
+        asked,
+        Message("tool", "<passage>" + "z" * 9_000, tool_call_id="1"),
+    ]
+    logged: list[str] = []
+    out = await complete_fitted(
+        llm, history, LLMRequest(messages=()), budget_chars=8_000, log=logged.append
+    )
+    assert out.content == "ok"
+    assert len(llm.requests[1].messages[-1].content) < len(llm.requests[0].messages[-1].content)
+    assert logged == ["  request too large; retrying with 4000 characters of context"]
+
+
 def test_fit_context_keeps_every_result_of_the_latest_turn() -> None:
     results = [
         Message("tool", '<passage ref="r">' + "x" * 900, tool_call_id=str(i)) for i in range(3)
     ]
     history = [Message("user", "q"), Message("assistant", "", ()), *results]
-    assert fit_context(history, 100) == history  # parallel searches: all three are current
+    fitted = fit_context(history, 100)  # parallel searches: all three are current
+    assert [m.tool_call_id for m in fitted[2:]] == ["0", "1", "2"]  # none dropped,
+    assert all(m.content.startswith('<passage ref="r">xxx') for m in fitted[2:])  # only cut
+    assert fit_context(history, 10_000) == history
 
 
 async def test_last_turns_force_a_submission() -> None:
@@ -391,6 +423,15 @@ def test_score_against_reference() -> None:
         ("duplicate_deliveries", Verdict.WRONG),
         ("reason_field", Verdict.MISSING),
     ]
+
+
+def test_scoring_accepts_listed_readings_and_loose_placeholders() -> None:
+    from payweave.agent.reference import _same  # noqa: PLC0415
+
+    assert _same(["error_code", "type"], "TYPE")
+    assert not _same(["error_code", "type"], "code")
+    assert _same("GET /orders/{order_id}/refunds/{refund_id}", "GET /orders/:id/refunds/:rid")
+    assert not _same("GET /orders/{order_id}", "GET /orders/{order_id}/payments")
 
 
 def test_citation_model_rejects_trivial_quotes() -> None:

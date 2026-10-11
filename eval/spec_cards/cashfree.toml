@@ -1,0 +1,62 @@
+# Hand-checked Cashfree Spec Card: the answer key for the holdout gateway.
+# Written from docs/sources/cashfree (snapshot 2026-10-11, API version 2026-01-01)
+# BEFORE any agent run on Cashfree. Strings compare case-insensitively; a list
+# means the docs support more than one reading and any of them is correct.
+#
+# Deliberately absent (the right answer is null / abstain, checked by hand):
+#   api_keys        - the docs never show key prefixes (observed: app id TEST..., secret cfsk_ma_test_...)
+#   checkout_return - nothing is signed on return; the server confirms with GET /orders/{order_id}
+#   error_shape.idempotency_conflict_message - the only sample is a placeholder ("something is not found")
+
+[basics]
+api_base_url = "https://api.cashfree.com/pg"   # sandbox: https://sandbox.cashfree.com/pg
+auth_scheme = "other"            # two headers: x-client-id + x-client-secret (OpenAPI apiKey schemes)
+amount_unit = "major_unit"       # order_amount is a number, e.g. 10.01 (rupees)
+
+[payment_flow]
+intent_object = "order"
+customer_completion = "hosted_checkout"   # cashfree.checkout({paymentSessionId}) opens the hosted page
+
+[capture]
+manual_capture = true            # preauthorisation: POST /orders/{order_id}/authorization action CAPTURE
+partial_capture = true           # "Cashfree supports partial capture."
+void_supported = true            # same endpoint, action VOID (whole amount only)
+
+[refunds]
+partial_refunds = true
+multiple_refunds = true          # "Process multiple partial refunds for a single payment."
+idempotency_header = "x-idempotency-key"
+
+[webhooks]
+signature_header = "x-webhook-signature"
+signature_algorithm = "timestamped_hmac_sha256"   # Base64(HMACSHA256(timestamp + rawBody, secret))
+signing_secret = "api_key_secret"                 # the PG client secret, not a per-webhook secret
+event_id_header = "x-idempotency-key"   # sample headers; the overview prose says x-idempotency-header
+ordered_delivery = false         # retries can arrive FAILED -> PENDING -> SUCCESS
+duplicate_deliveries = true      # "at-least-once delivery"
+
+[errors]
+# The errors page's "Error structure" lists error_code / error_reason (the payment's
+# error_details); the API's 4xx body has type (broad) and code (specific).
+error_code_field = ["error_code", "type"]
+reason_field = ["error_reason", "code"]
+
+# --- integration facts (compiled into manifest.toml) ---
+
+[endpoints]
+# Placeholders compare loosely ({order_id} == :id). Capture and refund go through the
+# ORDER id, unlike Razorpay's payment id: the spec's "by payment id" can't be met as written.
+create_intent = ["POST /orders", "POST /pg/orders"]
+get_intent = ["GET /orders/{order_id}", "GET /pg/orders/{order_id}"]
+list_attempts = ["GET /orders/{order_id}/payments", "GET /pg/orders/{order_id}/payments"]
+capture = ["POST /orders/{order_id}/authorization", "POST /pg/orders/{order_id}/authorization"]
+refund = ["POST /orders/{order_id}/refunds", "POST /pg/orders/{order_id}/refunds"]
+get_refund = [
+    "GET /orders/{order_id}/refunds/{refund_id}",
+    "GET /pg/orders/{order_id}/refunds/{refund_id}",
+]
+
+[error_shape]
+message_path = "message"
+code_path = "type"               # invalid_request_error, idempotency_error, ...
+reason_path = "code"             # order_not_found, request_invalid, ... (seen live: order_not_found)

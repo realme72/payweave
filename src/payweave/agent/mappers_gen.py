@@ -31,7 +31,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from payweave.agent.extract import SEARCH_LIMIT, SEARCH_TOOL, DocSource, _render_hits, fit_context
+from payweave.agent.extract import (
+    SEARCH_LIMIT,
+    SEARCH_TOOL,
+    DocSource,
+    _render_hits,
+    complete_fitted,
+)
 from payweave.llm import (
     LLMBadRequestError,
     LLMError,
@@ -401,16 +407,18 @@ async def write_mapper(
         must_submit = turn >= max_turns - 1 or len(result.searches) >= max_searches
         tools = (SUBMIT_TOOL,) if must_submit else (SEARCH_TOOL, SUBMIT_TOOL)
         try:
-            response = await complete_with_retry(
+            response = await complete_fitted(
                 llm,
+                messages,
                 LLMRequest(
-                    messages=tuple(fit_context(messages, CONTEXT_BUDGET_CHARS)),
+                    messages=(),
                     system=SYSTEM,
                     tools=tools,
                     max_tokens=3000,
                     require_tool=SUBMIT_TOOL.name if must_submit else None,
                 ),
-                on_wait=lambda wait, _exc: log(f"  rate limited; waiting {wait:.0f}s"),
+                budget_chars=CONTEXT_BUDGET_CHARS,
+                log=log,
             )
         except LLMBadRequestError as exc:
             if not must_submit:
@@ -433,6 +441,10 @@ async def write_mapper(
         result.input_tokens += response.usage.input_tokens
         result.output_tokens += response.usage.output_tokens
         if not response.tool_calls:
+            log(
+                f"  replied without a tool call ({response.stop_reason}): "
+                f"{response.content[:120]!r}"
+            )
             messages.append(Message("assistant", response.content))
             messages.append(Message("user", "Use search_docs or call submit_code."))
             continue

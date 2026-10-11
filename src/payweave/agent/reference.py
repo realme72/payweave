@@ -7,6 +7,7 @@ abstaining sends a human to look, a wrong value silently misleads.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from enum import StrEnum
@@ -37,9 +38,19 @@ def load_reference(path: Path) -> dict[str, dict[str, Any]]:
         return tomllib.load(f)
 
 
+_PLACEHOLDER = re.compile(r":[A-Za-z_]\w*|\{[A-Za-z_]\w*\}")
+
+
+def _norm(value: str) -> str:
+    # {order_id} and :id are the same path placeholder.
+    return _PLACEHOLDER.sub("{}", value.strip().rstrip("/").lower())
+
+
 def _same(expected: Any, got: Any) -> bool:
+    if isinstance(expected, list):  # the docs support several readings; any is correct
+        return any(_same(e, got) for e in expected)
     if isinstance(expected, str) and isinstance(got, str):
-        return expected.strip().rstrip("/").lower() == got.strip().rstrip("/").lower()
+        return _norm(expected) == _norm(got)
     return bool(expected == got)
 
 

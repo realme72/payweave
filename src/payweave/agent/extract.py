@@ -42,6 +42,8 @@ MAX_SEARCHES = 10  # per section; then the model must submit, with null for what
 # dropped first; the model can search again.
 CONTEXT_BUDGET_CHARS = 15_000
 _DROPPED = "[older search results removed to save space; search again if you need them]"
+_TRIMMED = "\n[rest of these results cut to save space; search more specifically]"
+_MIN_BUDGET_CHARS = 3_000
 _tracer = trace.get_tracer("payweave.agent")
 
 
@@ -135,7 +137,41 @@ def fit_context(messages: Sequence[Message], budget_chars: int) -> list[Message]
         if m.role == "tool" and m.content.startswith("<passage"):
             out[i] = Message("tool", _DROPPED, tool_call_id=m.tool_call_id)
             size -= len(m.content) - len(_DROPPED)
+    if size > budget_chars:
+        # The latest results alone are too big (dense pages, e.g. embedded OpenAPI YAML):
+        # keep the start of each, sharing what's left of the budget between them.
+        latest = [i for i in range(latest_turn + 1, len(out)) if out[i].role == "tool"]
+        other = size - sum(len(out[i].content) for i in latest)
+        share = max(500, (budget_chars - other) // max(1, len(latest)))
+        for i in latest:
+            m = out[i]
+            if len(m.content) > share:
+                out[i] = Message("tool", m.content[:share] + _TRIMMED, tool_call_id=m.tool_call_id)
     return out
+
+
+async def complete_fitted(
+    llm: LLMProvider,
+    messages: Sequence[Message],
+    request: LLMRequest,  # its messages are replaced by the fitted history
+    *,
+    budget_chars: int,
+    log: Callable[[str], None],
+) -> LLMResponse:
+    """complete_with_retry on the history fitted to ``budget_chars``. If the provider
+    still says the request is too large (HTTP 413), halve the budget and try again."""
+    while True:
+        try:
+            return await complete_with_retry(
+                llm,
+                replace(request, messages=tuple(fit_context(messages, budget_chars))),
+                on_wait=lambda wait, _exc: log(f"  rate limited; waiting {wait:.0f}s"),
+            )
+        except LLMBadRequestError as exc:
+            if exc.status != 413 or budget_chars < _MIN_BUDGET_CHARS:
+                raise
+            budget_chars //= 2
+            log(f"  request too large; retrying with {budget_chars} characters of context")
 
 
 def _render_hits(hits: Sequence[Hit]) -> str:
@@ -220,10 +256,11 @@ async def extract_section(
                     )
                 )
             try:
-                response = await complete_with_retry(
+                response = await complete_fitted(
                     llm,
+                    messages,
                     LLMRequest(
-                        messages=tuple(fit_context(messages, CONTEXT_BUDGET_CHARS)),
+                        messages=(),
                         system=SYSTEM,
                         # Only the submit tool when forced: Groq rejects the whole request
                         # (HTTP 400) if the model calls any other tool it was offered.
@@ -231,7 +268,8 @@ async def extract_section(
                         max_tokens=1500,
                         require_tool=submit.name if must_submit else None,
                     ),
-                    on_wait=lambda wait, _exc: log(f"  rate limited; waiting {wait:.0f}s"),
+                    budget_chars=CONTEXT_BUDGET_CHARS,
+                    log=log,
                 )
             except LLMBadRequestError as exc:
                 if not must_submit:
@@ -259,6 +297,10 @@ async def extract_section(
             result.input_tokens += response.usage.input_tokens
             result.output_tokens += response.usage.output_tokens
             if not response.tool_calls:
+                log(
+                    f"  replied without a tool call ({response.stop_reason}): "
+                    f"{response.content[:120]!r}"
+                )
                 messages.append(Message("assistant", response.content))
                 messages.append(
                     Message(
