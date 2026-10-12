@@ -36,6 +36,7 @@ from payweave.llm.retry import complete_with_retry
 MAX_TURNS = 8
 SEARCH_LIMIT = 4
 MAX_SEARCHES = 10  # per section; then the model must submit, with null for what it lacks
+MAX_REPLY_TOKENS = 6000  # ceiling when a reply is cut off before it says anything
 # Groq's free tier rejects any single request over ~7,000 input tokens. The
 # system prompt and tool schemas take ~2,000, so the conversation gets the rest
 # (at a conservative ~3.5 characters per token). Older search results are
@@ -242,6 +243,7 @@ async def extract_section(
     ]
     with _tracer.start_as_current_span(f"spec_card.{cls.TITLE}") as span:
         span.set_attributes({"payweave.gateway": gateway, "gen_ai.request.model": llm.model})
+        max_tokens = 1500
         for turn in range(1, max_turns + 1):
             result.turns = turn
             # The last turns must submit: a null answer can be reviewed, a run
@@ -265,7 +267,7 @@ async def extract_section(
                         # Only the submit tool when forced: Groq rejects the whole request
                         # (HTTP 400) if the model calls any other tool it was offered.
                         tools=(submit,) if must_submit else (SEARCH_TOOL, submit),
-                        max_tokens=1500,
+                        max_tokens=max_tokens,
                         require_tool=submit.name if must_submit else None,
                     ),
                     budget_chars=CONTEXT_BUDGET_CHARS,
@@ -290,6 +292,7 @@ async def extract_section(
             except LLMError as exc:
                 # Keep what this section did so far (turns, searches, tokens) for the log,
                 # including when the daily cap ends the whole run.
+                log(f"  stopped: {exc}")
                 result.out_of_budget = getattr(exc, "daily_exhausted", False)
                 result.problems = [str(exc)]
                 span.set_attributes({"payweave.turns": turn, "payweave.accepted": False})
@@ -301,6 +304,9 @@ async def extract_section(
                     f"  replied without a tool call ({response.stop_reason}): "
                     f"{response.content[:120]!r}"
                 )
+                if response.stop_reason == StopReason.MAX_TOKENS:
+                    # Gemini 3 spends max_tokens on thinking first; give it more room.
+                    max_tokens = min(max_tokens * 2, MAX_REPLY_TOKENS)
                 messages.append(Message("assistant", response.content))
                 messages.append(
                     Message(

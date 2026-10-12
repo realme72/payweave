@@ -13,6 +13,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 import httpx
@@ -39,6 +40,9 @@ class Preset:
     base_url: str
     key_env: str | None  # None: no key needed (local)
     default_model: str
+    # Sent with every request. Gemini 3 counts its thinking against max_tokens, so on
+    # a big context it can spend the whole budget thinking and return nothing.
+    extra_body: Mapping[str, Any] = MappingProxyType({})
 
 
 PRESETS: dict[str, Preset] = {
@@ -47,6 +51,7 @@ PRESETS: dict[str, Preset] = {
         "https://generativelanguage.googleapis.com/v1beta/openai/",
         "GEMINI_API_KEY",
         "gemini-3.8-flash",
+        MappingProxyType({"reasoning_effort": "low"}),
     ),
     "ollama": Preset("http://localhost:11434/v1/", None, "qwen2.5-coder:7b"),
     "openrouter": Preset("https://openrouter.ai/api/v1/", "OPENROUTER_API_KEY", "openrouter/auto"),
@@ -72,9 +77,11 @@ class OpenAICompatibleProvider:
         api_key: SecretStr | None = None,
         timeout_seconds: float = 120.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        extra_body: Mapping[str, Any] | None = None,
     ) -> None:
         self._name = name
         self._model = model
+        self._extra_body = dict(extra_body or {})
         headers = {"Authorization": f"Bearer {api_key.get_secret_value()}"} if api_key else {}
         self._client = httpx.AsyncClient(
             base_url=base_url, headers=headers, timeout=timeout_seconds, transport=transport
@@ -102,6 +109,7 @@ class OpenAICompatibleProvider:
             model=model or env.get(f"{preset.upper()}_MODEL") or p.default_model,
             api_key=key,
             transport=transport,
+            extra_body=p.extra_body,
         )
 
     @property
@@ -125,6 +133,7 @@ class OpenAICompatibleProvider:
             "messages": _messages(request),
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
+            **self._extra_body,
         }
         if request.tools:
             body["tools"] = [
@@ -174,10 +183,15 @@ class OpenAICompatibleProvider:
         detail = _error_detail(r)  # always keep the provider's own words (it names the limit)
         if r.status_code == 429:
             retry_after = r.headers.get("retry-after")
+            delay = _RETRY_DELAY.search(r.text)  # Gemini sends no header, only retryDelay
             raise LLMRateLimitError(
                 detail,
                 provider=self._name,
-                retry_after=float(retry_after) if retry_after else None,
+                retry_after=float(retry_after)
+                if retry_after
+                else float(delay.group(1))
+                if delay
+                else None,
                 daily_exhausted=bool(_DAILY.search(r.text)),  # Gemini names it in details
             )
         if r.status_code in (401, 403):
@@ -253,6 +267,9 @@ def _tool_call(raw: dict[str, Any]) -> ToolCall:
         arguments_error=error,
         extra=raw.get("extra_content") or None,
     )
+
+
+_RETRY_DELAY = re.compile(r'"retryDelay":\s*"(\d+(?:\.\d+)?)s"')
 
 
 def _error_detail(r: httpx.Response) -> str:

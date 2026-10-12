@@ -8,6 +8,7 @@ Per-minute limits are not a reason to switch; complete_with_retry waits those ou
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 
 from payweave.llm.base import LLMRateLimitError, LLMRequest, LLMResponse
@@ -51,7 +52,9 @@ class FallbackProvider:
 
 
 def provider_for(preset: str, model: str | None) -> OpenAICompatibleProvider | FallbackProvider:
-    """One provider, or a FallbackProvider for a comma-separated model list."""
+    """One provider, or a FallbackProvider for a comma-separated model list (from
+    ``--model`` or ``<PRESET>_MODEL`` in the environment)."""
+    model = model or os.environ.get(f"{preset.upper()}_MODEL")
     models = [m.strip() for m in (model or "").split(",") if m.strip()]
     if len(models) <= 1:
         return OpenAICompatibleProvider.from_preset(preset, model=models[0] if models else None)

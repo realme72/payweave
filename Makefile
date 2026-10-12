@@ -32,11 +32,13 @@ trace-demo:
 	set -a; . ./.env; set +a; uv run --extra otel python scripts/trace_demo.py
 
 # Knowledge base (needs local Postgres + pgvector; database "payweave")
+GATEWAY ?= razorpay
+
 kb-ingest:
-	uv run --extra knowledge python -m payweave.knowledge ingest razorpay
+	uv run --extra knowledge python -m payweave.knowledge ingest $(GATEWAY)
 
 kb-eval:
-	uv run --extra knowledge python -m payweave.knowledge eval eval/retrieval/razorpay.toml
+	uv run --extra knowledge python -m payweave.knowledge eval eval/retrieval/$(GATEWAY).toml
 
 # Gates G1-G7 on a package; rewrites its report.json (PKG=packages/<gateway>/<version>)
 PKG ?= packages/razorpay/v1

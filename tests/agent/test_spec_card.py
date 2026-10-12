@@ -218,6 +218,14 @@ async def test_text_reply_is_nudged_and_turns_are_capped() -> None:
     assert "Don't reply in text" in llm.requests[1].messages[-1].content
 
 
+async def test_reply_cut_off_by_max_tokens_gets_more_room() -> None:
+    cut = LLMResponse("s", "m", "", (), StopReason.MAX_TOKENS, Usage(50, 1500))
+    llm = ScriptedLLM(cut, cut, cut, tool("submit_webhooks", WEBHOOKS_OK))
+    result = await extract_section(llm, FakeDocs(), "razorpay", Webhooks)
+    assert result.section is not None
+    assert [r.max_tokens for r in llm.requests] == [1500, 3000, 6000, 6000]
+
+
 async def test_invalid_tool_json_is_sent_back() -> None:
     bad = ToolCall("c1", "search_docs", {}, "{query:", "invalid JSON: Expecting property name")
     llm = ScriptedLLM(

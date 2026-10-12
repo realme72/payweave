@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -120,8 +121,6 @@ def merge_cards(gateway: str, paths: list[Path]) -> SpecCard:
 
 def observed_prefix(env_name: str | None) -> str | None:
     """The test-key prefix of a configured key (never the key itself)."""
-    import os  # noqa: PLC0415
-
     from payweave.agent.manifest_compiler import test_key_prefix  # noqa: PLC0415
 
     if not env_name:
@@ -340,12 +339,16 @@ async def run_mappers(
     return 0 if out.promotable else 1
 
 
+# Pick a provider once in .env instead of passing --provider every time.
+DEFAULT_PROVIDER = os.environ.get("PAYWEAVE_LLM_PROVIDER", "groq")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="payweave.agent")
     sub = parser.add_subparsers(dest="command", required=True)
     p_card = sub.add_parser("spec-card", help="extract a gateway's Spec Card from its docs")
     p_card.add_argument("gateway")
-    p_card.add_argument("--provider", choices=sorted(PRESETS), default="groq")
+    p_card.add_argument("--provider", choices=sorted(PRESETS), default=DEFAULT_PROVIDER)
     p_card.add_argument(
         "--model",
         help="override the provider's default model; a,b,c moves on when one's daily quota is used",
@@ -375,17 +378,17 @@ def main() -> None:
         default=[],
         help="earlier spec-card runs to start from",
     )
-    p_build.add_argument("--provider", choices=sorted(PRESETS), default="groq")
+    p_build.add_argument("--provider", choices=sorted(PRESETS), default=DEFAULT_PROVIDER)
     p_build.add_argument("--model")
     p_build.add_argument("--test-key-env", help="env var holding the sandbox key id (prefix only)")
     p_review = sub.add_parser("review-card", help="confirm or reject a paused run's card")
     p_review.add_argument("thread")
-    p_review.add_argument("--provider", choices=sorted(PRESETS), default="groq")
+    p_review.add_argument("--provider", choices=sorted(PRESETS), default=DEFAULT_PROVIDER)
     p_review.add_argument("--model")
     p_review.add_argument("--settings-from", type=Path, help="a manifest whose [settings] to use")
     p_map = sub.add_parser("mappers", help="write mappers.py for a compiled draft, then gate it")
     p_map.add_argument("draft", type=Path)
-    p_map.add_argument("--provider", choices=sorted(PRESETS), default="groq")
+    p_map.add_argument("--provider", choices=sorted(PRESETS), default=DEFAULT_PROVIDER)
     p_map.add_argument("--model")
     p_map.add_argument("--rounds", type=int, default=2, help="repair rounds after the gates")
     p_map.add_argument("--settings-from", type=Path, help="a manifest whose [settings] to use")

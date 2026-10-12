@@ -1,7 +1,7 @@
 import pytest
 
 from payweave.llm import LLMRateLimitError, LLMRequest, LLMResponse, Message, StopReason, Usage
-from payweave.llm.fallback import FallbackProvider
+from payweave.llm.fallback import FallbackProvider, provider_for
 
 
 class Fake:
@@ -54,3 +54,12 @@ async def test_per_minute_limits_and_the_last_model_raise() -> None:
     last = FallbackProvider([Fake("a", limited(daily=True))])  # type: ignore[list-item]
     with pytest.raises(LLMRateLimitError):
         await last.complete(REQUEST)
+
+
+def test_model_list_can_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setenv("GEMINI_MODEL", "a, b")
+    llm = provider_for("gemini", None)
+    assert isinstance(llm, FallbackProvider)
+    assert llm.model == "a"
+    assert provider_for("gemini", "c").model == "c"  # --model wins

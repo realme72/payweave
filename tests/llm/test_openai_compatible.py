@@ -17,6 +17,7 @@ from payweave.llm import (
     Tool,
     ToolCall,
 )
+from payweave.llm.openai_compatible import PRESETS
 
 BASE = "https://api.groq.com/openai/v1"
 FAKE_KEY = "gsk_test_not_a_real_key"
@@ -243,6 +244,32 @@ async def test_gemini_daily_quota_is_recognised(
         await groq.complete(LLMRequest(messages=(Message("user", "x"),)))
     assert "You exceeded your current quota." in str(exc.value)
     assert exc.value.daily_exhausted
+
+
+async def test_gemini_retry_delay_is_read_from_the_body(
+    router: respx.MockRouter, groq: OpenAICompatibleProvider
+) -> None:
+    body = [{"error": {"code": 429, "details": [{"retryDelay": "37s"}]}}]
+    router.post("/chat/completions").respond(429, json=body)
+    with pytest.raises(LLMRateLimitError) as exc:
+        await groq.complete(LLMRequest(messages=(Message("user", "x"),)))
+    assert exc.value.retry_after == 37.0
+    assert not exc.value.daily_exhausted
+
+
+async def test_gemini_keeps_thinking_low_and_groq_sends_nothing_extra(
+    router: respx.MockRouter, groq: OpenAICompatibleProvider
+) -> None:
+    gemini = OpenAICompatibleProvider.from_preset("gemini", env={"GEMINI_API_KEY": FAKE_KEY})
+    with respx.mock(base_url=PRESETS["gemini"].base_url) as g:
+        route = g.post("chat/completions").respond(json=completion({"content": "ok"}))
+        await gemini.complete(LLMRequest(messages=(Message("user", "x"),)))
+    await gemini.aclose()
+    assert json.loads(route.calls.last.request.content)["reasoning_effort"] == "low"
+
+    groq_route = router.post("/chat/completions").respond(json=completion({"content": "ok"}))
+    await groq.complete(LLMRequest(messages=(Message("user", "x"),)))
+    assert "reasoning_effort" not in json.loads(groq_route.calls.last.request.content)
 
 
 async def test_network_failure_is_unavailable(
