@@ -15,12 +15,13 @@ from payweave.llm import (
     LLMRateLimitError,
     LLMRequest,
     LLMResponse,
+    LLMUnavailableError,
     Message,
     StopReason,
     ToolCall,
     Usage,
 )
-from payweave.llm.retry import complete_with_retry
+from payweave.llm.retry import ATTEMPTS, complete_with_retry
 
 SIG = "razorpay:webhooks.md#0"
 DUP = "razorpay:webhooks.md#1"
@@ -248,7 +249,7 @@ async def test_card_keeps_going_after_a_failed_section_and_keeps_work_on_daily_c
     monkeypatch.setattr("payweave.llm.retry._sleep", no_sleep)
     tpm = LLMRateLimitError("TPM", provider="s", retry_after=1, daily_exhausted=False)
     llm = ScriptedLLM(
-        *[tpm] * 4,  # webhooks: every retry rate-limited
+        *[tpm] * ATTEMPTS,  # webhooks: every retry rate-limited
         tool("submit_errors", {"error_code_field": fact(None), "reason_field": fact(None)}),
     )
     run = await extract_card(llm, FakeDocs(), "razorpay", sections=(Webhooks, Errors))
@@ -400,6 +401,18 @@ async def test_retry_waits_out_per_minute_limits_only() -> None:
     with pytest.raises(LLMRateLimitError):
         await complete_with_retry(ScriptedLLM(tpd), request, sleep=fake_sleep)
     assert waits == [7.5]
+
+
+async def test_overloaded_model_is_retried_with_growing_waits() -> None:
+    waits: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    busy = LLMUnavailableError("HTTP 503: high demand", provider="s", status=503)
+    llm = ScriptedLLM(busy, busy, busy, text("ok"))
+    response = await complete_with_retry(llm, LLMRequest(messages=()), sleep=fake_sleep)
+    assert (response.content, waits) == ("ok", [10.5, 20.5, 40.5])
 
 
 # --- scoring --------------------------------------------------------------------------------
