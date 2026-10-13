@@ -84,6 +84,17 @@ def test_metadata_and_endpoint() -> None:
     assert doc.endpoint == "POST /v1/payments/:id/capture"
 
 
+def test_endpoint_from_an_openapi_fence() -> None:
+    page = (
+        "# Create Refund\n\nUse this API to initiate refunds.\n\n## OpenAPI\n\n"
+        "````yaml openapi/payments/v2026-01-01.yaml post /orders/{order_id}/refunds\n"
+        "paths:\n  /orders/{order_id}/refunds:\n    post: {}\n````\n"
+    )
+    doc = parse(page)
+    assert doc.endpoint == "POST /orders/{order_id}/refunds"
+    assert all("POST /orders/{order_id}/refunds" in c.header for c in doc.chunks)
+
+
 def test_three_identical_parameter_headings_are_told_apart() -> None:
     doc = parse()
     assert by_kind(doc, ChunkKind.PATH_PARAMS) == ["`id` _mandatory_\n: `string` The payment id."]

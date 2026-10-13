@@ -230,8 +230,14 @@ class Endpoints(Section):
         description="List the payments (attempts) made against one such object, by its id; "
         "null if fetching the object already includes them"
     )
-    capture: Cited[Endpoint] = Field(description="Capture an authorized payment, by payment id")
-    refund: Cited[Endpoint] = Field(description="Create a refund for a payment, by payment id")
+    capture: Cited[Endpoint] = Field(
+        description="Capture an authorized payment: by payment id, or by the intent's id "
+        "if the gateway captures through that object"
+    )
+    refund: Cited[Endpoint] = Field(
+        description="Create a refund for a payment: by payment id, or by the intent's id "
+        "if the gateway refunds through that object"
+    )
     get_refund: Cited[Endpoint] = Field(description="Fetch a refund by refund id")
 
 

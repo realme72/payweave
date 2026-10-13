@@ -31,7 +31,7 @@ from enum import StrEnum
 
 type TokenCounter = Callable[[str], int]
 
-CHUNKER_VERSION = "1"  # bump when chunking changes, so documents get re-ingested
+CHUNKER_VERSION = "2"  # bump when chunking changes, so documents get re-ingested
 
 SDK_LANGUAGES = frozenset({"java", "python", "go", "php", "ruby", "csharp", "dotnet"})
 SDK_LABELS = frozenset({"node.js", ".net"})  # javascript is kept unless it's the Node SDK
@@ -96,6 +96,11 @@ class ChunkingConfig:
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 _HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
 _ENDPOINT = re.compile(r"^\*\*(GET|POST|PUT|PATCH|DELETE)\*\*\s+`([^`]+)`")
+# Mintlify API pages (Cashfree) name the operation in the OpenAPI fence:
+# ````yaml openapi/payments/v2026-01-01.yaml post /orders/{order_id}/refunds
+_OPENAPI_FENCE = re.compile(
+    r"^`{3,}\s*ya?ml\s+\S+\s+(get|post|put|patch|delete)\s+(/\S+)\s*$", re.IGNORECASE
+)
 _FENCE = re.compile(r"^\s*```(.*)$")
 _PARAM = re.compile(r"^`([A-Za-z0-9_.\[\]]+)`(?:\s+_(mandatory|optional)_)?\s*$")
 _ERROR_FIELD = re.compile(r"^\* code:")
@@ -376,9 +381,9 @@ def chunk_markdown(
 
     endpoint = None
     for line in lines:
-        match = _ENDPOINT.match(line.strip())
+        match = _ENDPOINT.match(line.strip()) or _OPENAPI_FENCE.match(line.strip())
         if match:
-            endpoint = f"{match.group(1)} {match.group(2)}"
+            endpoint = f"{match.group(1).upper()} {match.group(2)}"
             break
 
     raw = _raw_sections(lines)
