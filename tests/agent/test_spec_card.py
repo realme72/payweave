@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import ValidationError
@@ -8,7 +8,15 @@ from pydantic import ValidationError
 from payweave.agent.citations import check_section, normalize
 from payweave.agent.extract import extract_card, extract_section, fit_context
 from payweave.agent.reference import Verdict, score
-from payweave.agent.spec_card import Citation, Cited, Errors, SpecCard, Webhooks, tool_schema
+from payweave.agent.spec_card import (
+    Citation,
+    Cited,
+    Endpoints,
+    Errors,
+    SpecCard,
+    Webhooks,
+    tool_schema,
+)
 from payweave.knowledge.chunker import ChunkKind
 from payweave.llm import (
     LLMBadRequestError,
@@ -225,6 +233,38 @@ async def test_reply_cut_off_by_max_tokens_gets_more_room() -> None:
     result = await extract_section(llm, FakeDocs(), "razorpay", Webhooks)
     assert result.section is not None
     assert [r.max_tokens for r in llm.requests] == [1500, 3000, 6000, 6000]
+
+
+class IndexedDocs(FakeDocs):
+    INDEX: ClassVar[dict[str, str]] = {
+        "cf:create-order.md#0": "Cashfree > Create Order\nPOST /orders",
+        "cf:create-refund.md#0": "Cashfree > Create Refund\nPOST /orders/{order_id}/refunds",
+    }
+
+    def endpoint_index(self, gateway: str) -> list[FakeHit]:
+        return [FakeHit(ref, text) for ref, text in self.INDEX.items()]
+
+    def chunks_by_ref(self, refs: Sequence[str]) -> Mapping[str, str]:
+        return {r: (self.INDEX | CHUNKS)[r] for r in refs if r in self.INDEX | CHUNKS}
+
+
+async def test_endpoint_sections_start_with_a_citable_endpoint_index() -> None:
+    endpoints = {name: fact(None) for name in Endpoints.model_fields}
+    endpoints["refund"] = fact(
+        "POST /orders/{order_id}/refunds",
+        "cf:create-refund.md#0",
+        "POST /orders/{order_id}/refunds",
+    )
+    llm = ScriptedLLM(tool("submit_endpoints", endpoints))
+    result = await extract_section(llm, IndexedDocs(), "cashfree", Endpoints)
+    assert isinstance(result.section, Endpoints)
+    assert result.section.refund.value == "POST /orders/{order_id}/refunds"
+    first = llm.requests[0].messages[0].content
+    assert '<passage ref="cf:create-order.md#0">' in first
+
+    llm = ScriptedLLM(tool("submit_webhooks", WEBHOOKS_OK))
+    await extract_section(llm, IndexedDocs(), "razorpay", Webhooks)
+    assert "<passage" not in llm.requests[0].messages[0].content  # only where endpoints matter
 
 
 async def test_invalid_tool_json_is_sent_back() -> None:
@@ -604,4 +644,17 @@ def test_path_segments_must_be_json_keys() -> None:
     assert check_section(shape('{"error": {"code": "BAD_REQUEST_ERROR"'), {ref: chunk}) == []
     inner_only = check_section(shape('"code": "BAD_REQUEST_ERROR"'), {ref: chunk})
     assert inner_only
-    assert "error not a JSON key" in inner_only[0]
+    assert "error not a JSON or YAML key" in inner_only[0]
+
+    # OpenAPI examples are YAML: `code: request_failed` is a key too, but a word isn't.
+    yaml = "example: message: bad URL code: request_failed type: invalid_request_error"
+    flat = ErrorShape.model_validate(
+        {
+            "message_path": {"value": "message", "citations": [{"ref": ref, "quote": yaml}]},
+            "code_path": {"value": "type", "citations": [{"ref": ref, "quote": yaml}]},
+            "reason_path": {"value": "code", "citations": [{"ref": ref, "quote": "the code"}]},
+            "idempotency_conflict_message": {"value": None, "citations": []},
+        }
+    )
+    problems = check_section(flat, {ref: f"{yaml} the code"})
+    assert [p.split(":")[0] for p in problems] == ["reason_path"]

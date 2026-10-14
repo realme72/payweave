@@ -28,6 +28,12 @@ def normalize(text: str) -> str:
     return _SPACE.sub(" ", _MARKUP.sub("", text)).strip().lower()
 
 
+def _is_key(segment: str, quote: str) -> bool:
+    """A key in a JSON sample (`"code": ...`) or an OpenAPI YAML example (`code: ...`)."""
+    seg = re.escape(segment.lower())
+    return bool(re.search(rf'"{seg}"\s*:|(?:^|\s){seg}:(?:\s|$)', quote))
+
+
 def check_section(section: Section, chunks: Mapping[str, str]) -> list[str]:
     """Return problems, one line each; empty means every citation holds."""
     problems: list[str] = []
@@ -62,14 +68,12 @@ def check_section(section: Section, chunks: Mapping[str, str]) -> list[str]:
         if name in section.PATHS and isinstance(fact.value, str) and quotes:
             # As a key (`"error": {`), not just somewhere ("BAD_REQUEST_ERROR" isn't `error`).
             missing = [
-                seg
-                for seg in fact.value.split(".")
-                if not any(re.search(rf'"{re.escape(seg.lower())}"\s*:', q) for q in quotes)
+                seg for seg in fact.value.split(".") if not any(_is_key(seg, q) for q in quotes)
             ]
             if missing:
                 problems.append(
-                    f"{name}: {', '.join(missing)} not a JSON key in any cited quote; quote the "
-                    "sample body including its enclosing keys"
+                    f"{name}: {', '.join(missing)} not a JSON or YAML key in any cited quote; "
+                    "quote the sample body including its enclosing keys"
                 )
         if (
             name in section.ENDPOINT_EVIDENCE

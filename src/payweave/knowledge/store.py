@@ -106,6 +106,12 @@ class SearchHit:
 
 
 @dataclass(frozen=True, slots=True)
+class IndexEntry:
+    ref: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentSource:
     gateway: str
     path: str
@@ -275,6 +281,19 @@ class KnowledgeStore:
             rankings["vector"] = self._vector_ids(query, gateway, kinds, CANDIDATES)
         fused = reciprocal_rank_fusion(rankings, weights=weights)[:limit]
         return self._hits(fused)
+
+    def endpoint_index(self, gateway: str) -> list[IndexEntry]:
+        """One citable passage per API page that names its endpoint: the page's first
+        chunk, cut to its context header (title and method + path)."""
+        rows = self._conn.execute(
+            """SELECT DISTINCT ON (d.id) c.ref, c.content
+               FROM kb_chunks c JOIN kb_documents d ON d.id = c.document_id
+               WHERE d.gateway = %s AND d.endpoint IS NOT NULL
+               ORDER BY d.id, c.id""",
+            (gateway,),
+        ).fetchall()
+        entries = [IndexEntry(r["ref"], r["content"].split("\n\n", 1)[0]) for r in rows]
+        return sorted(entries, key=lambda e: e.content.splitlines()[-1])
 
     def chunks_by_ref(self, refs: Iterable[str]) -> dict[str, str]:
         """Chunk text for each ref that exists (for checking citations)."""

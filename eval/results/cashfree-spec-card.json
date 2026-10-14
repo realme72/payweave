@@ -58,8 +58,8 @@
         "value": true,
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__preauth-journey.md#11",
-            "quote": "Once you simulate the payment as successfully authorised in sandbox, call the [Preauthorisation](/docs/api-reference/payments/latest/payments/preauthorisation) API (`POST /orders/{order_id}/authorization`) with the same **`order_id`** you received when you created the order. Use either action below depending on whether you want to collect or release the funds:"
+            "ref": "cashfree:api-reference__payments__latest__payments__preauthorisation.md#1",
+            "quote": "Cashfree > Preauthorisation\nPOST /orders/{order_id}/authorization\n\n> Use this API to capture or void a [pre-authorised](/docs/payments/features/pre-authorisation) payment."
           }
         ]
       },
@@ -67,14 +67,23 @@
         "value": true,
         "citations": [
           {
-            "ref": "cashfree:payments__features__pre-authorisation.md#23",
-            "quote": "Can a merchant capture a partial amount?\">\n    Yes, merchants can capture a partial amount of the authorised funds."
+            "ref": "cashfree:api-reference__payments__preauth-journey.md#12",
+            "quote": "The amount must not exceed the authorised order amount. Cashfree supports partial capture. A void request does not require an amount."
           }
         ]
       },
       "void_supported": {
-        "value": null,
-        "citations": []
+        "value": true,
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__preauthorisation.md#1",
+            "quote": "Cashfree > Preauthorisation\nPOST /orders/{order_id}/authorization\n\n> Use this API to capture or void a [pre-authorised](/docs/payments/features/pre-authorisation) payment."
+          },
+          {
+            "ref": "cashfree:payments__features__pre-authorisation.md#19",
+            "quote": "The void workflow helps you to release the entire authorised amount back to the customer, by calling [Preauthorisation API](/docs/api-reference/payments/latest/payments/preauthorisation) for void."
+          }
+        ]
       }
     },
     "refunds": {
@@ -182,32 +191,52 @@
         "value": "POST /orders",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__orders__create-order.md#1",
+            "ref": "cashfree:api-reference__payments__latest__orders__create-order.md#0",
             "quote": "Cashfree > Create Order\nPOST /orders"
           }
         ]
       },
       "get_intent": {
-        "value": null,
-        "citations": []
+        "value": "GET /orders/{order_id}",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__orders__get-order.md#0",
+            "quote": "Cashfree > Get Order\nGET /orders/{order_id}"
+          }
+        ]
       },
       "list_attempts": {
-        "value": null,
-        "citations": []
+        "value": "GET /orders/{order_id}/payments",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__get-payments-for-an-order.md#0",
+            "quote": "Cashfree > Get Payments for an Order\nGET /orders/{order_id}/payments"
+          }
+        ]
       },
       "capture": {
-        "value": null,
-        "citations": []
+        "value": "POST /orders/{order_id}/authorization",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__preauthorisation.md#0",
+            "quote": "Cashfree > Preauthorisation\nPOST /orders/{order_id}/authorization"
+          }
+        ]
       },
       "refund": {
-        "value": null,
-        "citations": []
+        "value": "POST /orders/{order_id}/refunds",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__refunds__create-refund.md#0",
+            "quote": "Cashfree > Create Refund\nPOST /orders/{order_id}/refunds"
+          }
+        ]
       },
       "get_refund": {
         "value": "GET /orders/{order_id}/refunds/{refund_id}",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__refunds__get-refund.md#1",
+            "ref": "cashfree:api-reference__payments__latest__refunds__get-refund.md#0",
             "quote": "Cashfree > Get Refund\nGET /orders/{order_id}/refunds/{refund_id}"
           }
         ]
@@ -258,12 +287,22 @@
     },
     "error_shape": {
       "message_path": {
-        "value": null,
-        "citations": []
+        "value": "message",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__preauthorisation.md#15",
+            "quote": "message: order with same id is already present"
+          }
+        ]
       },
       "code_path": {
-        "value": null,
-        "citations": []
+        "value": "code",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__preauthorisation.md#15",
+            "quote": "code: order_already_exists"
+          }
+        ]
       },
       "reason_path": {
         "value": null,

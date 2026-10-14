@@ -64,6 +64,8 @@ class Section(BaseModel):
     PATHS: ClassVar[frozenset[str]] = frozenset()
     # Values that must be quoted as a JSON string from a sample response ("...").
     JSON_STRINGS: ClassVar[frozenset[str]] = frozenset()
+    # Show the gateway's endpoint index (one passage per API page) in the first message.
+    ENDPOINT_INDEX: ClassVar[bool] = False
     # Facts from earlier sections this one builds on ("section.field"), shown in its prompt.
     USES: ClassVar[tuple[str, ...]] = ()
 
@@ -212,6 +214,7 @@ class Endpoints(Section):
     TITLE = "endpoints"
     GOAL = "the REST endpoints to create, read, capture and refund payments"
     USES = ("basics.api_base_url", "payment_flow.intent_object")
+    ENDPOINT_INDEX = True
     VERBATIM = frozenset(
         {"create_intent", "get_intent", "list_attempts", "capture", "refund", "get_refund"}
     )

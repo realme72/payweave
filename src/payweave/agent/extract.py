@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from opentelemetry import trace
 from pydantic import ValidationError
@@ -69,6 +69,28 @@ class DocSource(Protocol):
     ) -> Sequence[Hit]: ...
 
     def chunks_by_ref(self, refs: Sequence[str]) -> Mapping[str, str]: ...
+
+
+@runtime_checkable
+class EndpointIndex(Protocol):
+    """Optional: a DocSource that knows each API page's endpoint (``KnowledgeStore`` does)."""
+
+    def endpoint_index(self, gateway: str) -> Sequence[Hit]: ...
+
+
+def _endpoint_index(cls: type[Section], docs: DocSource, gateway: str) -> str:
+    # Searching page by page and remembering each path failed on dense docs: older
+    # results are trimmed from the context before the model submits. A short list up
+    # front, each entry citable, keeps every endpoint in view.
+    if not (cls.ENDPOINT_INDEX or cls.ENDPOINT_EVIDENCE) or not isinstance(docs, EndpointIndex):
+        return ""
+    entries = docs.endpoint_index(gateway)
+    if not entries:
+        return ""
+    return (
+        "\n\nThe documented endpoints, one passage per API reference page "
+        "(cite these refs and quote the method + path line):\n\n" + _render_hits(entries)
+    )
 
 
 SEARCH_TOOL = Tool(
@@ -238,7 +260,8 @@ async def extract_section(
             f"Gateway: {gateway}. Fill in the `{cls.TITLE}` section ({cls.GOAL}). "
             f"The fields and what they mean are in the parameters of {submit.name}."
             + _known_facts(cls, known or {})
-            + (f"\n\n{cls.HINTS}" if cls.HINTS else ""),
+            + (f"\n\n{cls.HINTS}" if cls.HINTS else "")
+            + _endpoint_index(cls, docs, gateway),
         )
     ]
     with _tracer.start_as_current_span(f"spec_card.{cls.TITLE}") as span:
