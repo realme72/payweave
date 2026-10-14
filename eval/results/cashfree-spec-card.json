@@ -1,0 +1,304 @@
+{
+  "card": {
+    "gateway": "cashfree",
+    "basics": {
+      "api_base_url": {
+        "value": "https://api.cashfree.com/pg",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__overview.md#2",
+            "quote": "| Production | `https://api.cashfree.com/pg` |"
+          }
+        ]
+      },
+      "auth_scheme": {
+        "value": null,
+        "citations": []
+      },
+      "amount_unit": {
+        "value": "major_unit",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__orders__create-order.md#12",
+            "quote": "Bill amount for the order. Provide upto two decimals. 10.15 means Rs 10 and 15 paisa."
+          }
+        ]
+      }
+    },
+    "payment_flow": {
+      "intent_object": {
+        "value": "order",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__orders__create-order.md#1",
+            "quote": "Use this API to create orders with Cashfree from your backend to get a `payment_sessions_id`. You can use the `payment_sessions_id` to create a transaction for the order."
+          },
+          {
+            "ref": "cashfree:payments__online__web__redirect.md#14",
+            "quote": "Step 1: Create an order <Badge color=\"green\">Server-side</Badge>"
+          }
+        ]
+      },
+      "customer_completion": {
+        "value": "hosted_checkout",
+        "citations": [
+          {
+            "ref": "cashfree:payments__online__web__redirect.md#1",
+            "quote": "Integrate Cashfree's prebuilt, PCI compliant hosted web checkout to accept 120+ payment methods on your site while keeping branding and UX in your control."
+          },
+          {
+            "ref": "cashfree:payments__online__web__redirect.md#15",
+            "quote": "Step 2: Open the checkout page <Badge color=\"orange\">Client-side</Badge>"
+          }
+        ]
+      }
+    },
+    "capture": {
+      "manual_capture": {
+        "value": true,
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__preauth-journey.md#11",
+            "quote": "Once you simulate the payment as successfully authorised in sandbox, call the [Preauthorisation](/docs/api-reference/payments/latest/payments/preauthorisation) API (`POST /orders/{order_id}/authorization`) with the same **`order_id`** you received when you created the order. Use either action below depending on whether you want to collect or release the funds:"
+          }
+        ]
+      },
+      "partial_capture": {
+        "value": true,
+        "citations": [
+          {
+            "ref": "cashfree:payments__features__pre-authorisation.md#23",
+            "quote": "Can a merchant capture a partial amount?\">\n    Yes, merchants can capture a partial amount of the authorised funds."
+          }
+        ]
+      },
+      "void_supported": {
+        "value": null,
+        "citations": []
+      }
+    },
+    "refunds": {
+      "partial_refunds": {
+        "value": true,
+        "citations": [
+          {
+            "ref": "cashfree:payments__manage__refunds__overview.md#2",
+            "quote": "* **Partial refund**: Refund a portion of the captured amount."
+          }
+        ]
+      },
+      "multiple_refunds": {
+        "value": true,
+        "citations": [
+          {
+            "ref": "cashfree:payments__manage__refunds__overview.md#2",
+            "quote": "* **Multiple partial refunds**: Process multiple partial refunds for a single payment. The total of all partial refunds can't exceed the captured amount."
+          }
+        ]
+      },
+      "idempotency_header": {
+        "value": "x-idempotency-key",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__refunds__create-refund.md#4",
+            "quote": "    xIdempotencyKeyHeader:\n      in: header\n      name: x-idempotency-key"
+          }
+        ]
+      }
+    },
+    "webhooks": {
+      "signature_header": {
+        "value": "x-webhook-signature",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__webhooks__signature-verification.md#1",
+            "quote": "* The actual signature is present in the header `x-webhook-signature`."
+          }
+        ]
+      },
+      "signature_algorithm": {
+        "value": "timestamped_hmac_sha256",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__webhooks__overview.md#11",
+            "quote": "timestamp := 1617695238078;\nsignedPayload := $timestamp.$payload;\nexpectedSignature := Base64Encode(HMACSHA256($signedPayload, $merchantSecretKey));"
+          }
+        ]
+      },
+      "signing_secret": {
+        "value": "api_key_secret",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__webhooks__signature-verification.md#1",
+            "quote": "You need your Cashfree PG secret key and the payload to verify the signature."
+          }
+        ]
+      },
+      "event_id_header": {
+        "value": "x-idempotency-key",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__webhooks.md#3",
+            "quote": "| x-idempotency-key | n9rn7079wqXcse3GEDEXCYle9ajXmU0SUQY8zrUNAlc= |"
+          }
+        ]
+      },
+      "ordered_delivery": {
+        "value": null,
+        "citations": []
+      },
+      "duplicate_deliveries": {
+        "value": true,
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__webhooks__overview.md#6",
+            "quote": "In case of inadvertent downtimes at Cashfree or your end, Cashfree may attempt duplicate webhook delivery to ensure fulfilment."
+          }
+        ]
+      }
+    },
+    "errors": {
+      "error_code_field": {
+        "value": "code",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__get-payments-for-an-order.md#13",
+            "quote": "properties:\n        message:\n          type: string\n        code:\n          type: string\n        type:\n          type: string\n          description: authentication_error."
+          }
+        ]
+      },
+      "reason_field": {
+        "value": "message",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__payments__get-payments-for-an-order.md#13",
+            "quote": "properties:\n        message:\n          type: string\n        code:\n          type: string\n        type:\n          type: string\n          description: authentication_error."
+          }
+        ]
+      }
+    },
+    "endpoints": {
+      "create_intent": {
+        "value": "POST /orders",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__orders__create-order.md#1",
+            "quote": "Cashfree > Create Order\nPOST /orders"
+          }
+        ]
+      },
+      "get_intent": {
+        "value": null,
+        "citations": []
+      },
+      "list_attempts": {
+        "value": null,
+        "citations": []
+      },
+      "capture": {
+        "value": null,
+        "citations": []
+      },
+      "refund": {
+        "value": null,
+        "citations": []
+      },
+      "get_refund": {
+        "value": "GET /orders/{order_id}/refunds/{refund_id}",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__refunds__get-refund.md#1",
+            "quote": "Cashfree > Get Refund\nGET /orders/{order_id}/refunds/{refund_id}"
+          }
+        ]
+      }
+    },
+    "ids": {
+      "intent_id_example": {
+        "value": "2149460581",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__orders__terminate-order.md#5",
+            "quote": "cf_order_id: '2149460581'"
+          }
+        ]
+      },
+      "attempt_id_example": {
+        "value": "918812",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__refunds__get-all-refunds-for-an-order.md#5",
+            "quote": "cf_payment_id: '918812'"
+          }
+        ]
+      },
+      "refund_id_example": {
+        "value": "1553338",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__refunds__get-all-refunds-for-an-order.md#5",
+            "quote": "cf_refund_id: '1553338'"
+          }
+        ]
+      }
+    },
+    "api_keys": {
+      "test_key_prefix": {
+        "value": null,
+        "citations": []
+      },
+      "live_key_prefix": {
+        "value": null,
+        "citations": []
+      },
+      "prefixed_key": {
+        "value": null,
+        "citations": []
+      }
+    },
+    "error_shape": {
+      "message_path": {
+        "value": null,
+        "citations": []
+      },
+      "code_path": {
+        "value": null,
+        "citations": []
+      },
+      "reason_path": {
+        "value": null,
+        "citations": []
+      },
+      "idempotency_conflict_message": {
+        "value": null,
+        "citations": []
+      }
+    },
+    "checkout_return": {
+      "intent_param": {
+        "value": null,
+        "citations": []
+      },
+      "attempt_param": {
+        "value": null,
+        "citations": []
+      },
+      "signature_param": {
+        "value": null,
+        "citations": []
+      },
+      "signed_message": {
+        "value": null,
+        "citations": []
+      },
+      "signature_scheme": {
+        "value": null,
+        "citations": []
+      },
+      "signing_key": {
+        "value": null,
+        "citations": []
+      }
+    }
+  }
+}
