@@ -28,6 +28,8 @@ from payweave.packages.runtime import (
 from payweave.testing.razorpay import sequential_ids
 from payweave.verify.differential import run_differential
 from payweave.verify.references import REFERENCES
+from payweave.verify.sandbox_smoke import sandbox_config, sandbox_customer
+from payweave.verify.sandbox_smoke import smoke as sandbox_smoke
 from payweave.verify.scenarios import SCENARIOS
 
 REPORT_FILE = "report.json"
@@ -117,6 +119,32 @@ async def g7_differential(package: GatewayPackage) -> dict[str, Any]:
     return gate(status, summary, **details)
 
 
+async def g6_sandbox(package: GatewayPackage | None) -> dict[str, Any]:
+    """The automatic sandbox smoke run when its keys are configured (verify/sandbox_smoke.py).
+
+    Paying at checkout still needs a person (tests/gateways/<gateway>/test_sandbox.py).
+    """
+    if package is None:
+        return gate("not_run", "package did not load")
+    config = sandbox_config(package)
+    if config is None:
+        upper = package.manifest.gateway.upper()
+        return gate(
+            "not_run",
+            f"set {upper}_<CREDENTIAL> sandbox keys (and PAYWEAVE_TEST_CUSTOMER_*) to run "
+            "the sandbox smoke test",
+        )
+    try:
+        passed, findings = await sandbox_smoke(package, config, sandbox_customer())
+    except ValueError as exc:  # config refused, e.g. by the live guard
+        return gate("fail", f"sandbox config refused: {exc}")
+    if findings:
+        return gate(
+            "fail", f"sandbox: {len(findings)} problem(s)", passed=passed, findings=findings
+        )
+    return gate("pass", f"sandbox: {', '.join(passed)} behaved as expected", passed=passed)
+
+
 async def build_report(package_dir: Path, *, contract: bool = True) -> dict[str, Any]:
     started = time.perf_counter()
     gates: dict[str, dict[str, Any]] = {}
@@ -151,11 +179,7 @@ async def build_report(package_dir: Path, *, contract: bool = True) -> dict[str,
                 if contract is False
                 else f"no simulator for {package.manifest.gateway}",
             )
-    gates["G6"] = gate(
-        "not_run",
-        "needs test-mode keys and a person at checkout: "
-        "`pytest -m sandbox` (tests/gateways/<gateway>/test_sandbox.py)",
-    )
+    gates["G6"] = await g6_sandbox(package)
     if package is not None:
         gates["G7"] = await g7_differential(package)
     for name in REQUIRED:

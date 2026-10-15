@@ -248,6 +248,7 @@ def test_header_auth_relative_paths_and_intent_scoped_operations() -> None:
         basics={
             "api_base_url": c("https://api.cashfree.com/pg"),
             "auth_scheme": c("api_key_headers"),
+            "sandbox_base_url": c("https://sandbox.cashfree.com/pg"),
         },
         auth_headers={
             "key_id_header": c("x-client-id"),
@@ -274,6 +275,8 @@ def test_header_auth_relative_paths_and_intent_scoped_operations() -> None:
     assert out.ok, (out.gaps, out.problems)
     m = out.manifest
     assert m["api"]["headers"] == {"x-api-version": "2026-01-01"}
+    assert m["api"]["sandbox_base_url"] == "https://sandbox.cashfree.com/pg/"
+    assert m["api"]["allowed_hosts"] == ["api.cashfree.com", "sandbox.cashfree.com"]
     assert m["auth"] == {
         "scheme": "api_key_headers",
         "username": "key_id",

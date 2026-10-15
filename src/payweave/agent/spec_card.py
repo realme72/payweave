@@ -78,7 +78,7 @@ class Section(BaseModel):
 class Basics(Section):
     TITLE = "basics"
     GOAL = "how requests are sent and authenticated, and how amounts are expressed"
-    VERBATIM = frozenset({"api_base_url"})
+    VERBATIM = frozenset({"api_base_url", "sandbox_base_url"})
 
     api_base_url: Cited[Identifier] = Field(
         description="Base URL of the server-side REST API, up to and including any version "
@@ -94,6 +94,12 @@ class Basics(Section):
     amount_unit: Cited[Literal["minor_unit", "major_unit"]] = Field(
         description="minor_unit: amounts are integers in the smallest currency unit "
         "(paise, cents); major_unit: decimal amounts like 10.50"
+    )
+    # Added later; the default keeps earlier cards loadable.
+    sandbox_base_url: Cited[Identifier] = Field(
+        default_factory=lambda: Cited(value=None, citations=[]),
+        description="Base URL for test mode if it differs from api_base_url (a separate "
+        "sandbox host); null if test and live keys use the same URL",
     )
 
 

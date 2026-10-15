@@ -132,3 +132,30 @@ def test_what_the_sandbox_shows_wins_over_the_card() -> None:
     assert out.manifest["errors"]["message_paths"] == ["message"]
     assert out.provenance["errors.code_paths"][0]["ref"] == "observed:sandbox"
     assert any("card said" in n for n in out.notes)
+
+
+def test_observations_become_cited_card_facts() -> None:
+    from payweave.agent.citations import check_section  # noqa: PLC0415
+    from payweave.agent.spec_card import Errors, ErrorShape  # noqa: PLC0415
+    from payweave.verify.error_probe import observed_card  # noqa: PLC0415
+
+    card = observed_card(infer_error_shape(CASHFREE))
+    assert card["error_shape"]["code_path"]["value"] == "type"
+    assert card["errors"] == {
+        "error_code_field": {
+            "value": "type",
+            "citations": [
+                {"ref": "observed:sandbox", "quote": '{"type": "invalid_request_error"}'}
+            ],
+        },
+        "reason_field": {
+            "value": "code",
+            "citations": [{"ref": "observed:sandbox", "quote": '{"code": "order_not_found"}'}],
+        },
+    }
+    unknown: dict[str, Any] = {"value": None, "citations": []}
+    shape = ErrorShape.model_validate(
+        card["error_shape"] | {"idempotency_conflict_message": unknown}
+    )
+    assert check_section(shape, {}) == []  # observed evidence needs no doc page
+    assert check_section(Errors.model_validate(card["errors"]), {}) == []

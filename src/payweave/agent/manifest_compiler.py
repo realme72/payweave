@@ -132,7 +132,17 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
         url = urlsplit(base)
         base_path = url.path.rstrip("/")
         m["api"] = {"base_url": base.rstrip("/") + "/", "allowed_hosts": [url.hostname or ""]}
-        out.notes.append(f"allowed_hosts = [{url.hostname}] from the cited base URL: confirm it")
+        sandbox = b.fact("basics", "sandbox_base_url", "api.sandbox_base_url", required=False)
+        if sandbox and sandbox.rstrip("/") != base.rstrip("/"):
+            s_url = urlsplit(sandbox)
+            if s_url.path.rstrip("/") != base_path:
+                out.gaps.append(f"api.sandbox_base_url: {sandbox!r} has a different path")
+            else:
+                m["api"]["sandbox_base_url"] = sandbox.rstrip("/") + "/"
+                m["api"]["allowed_hosts"].append(s_url.hostname or "")
+        out.notes.append(
+            f"allowed_hosts = {m['api']['allowed_hosts']} from the cited base URLs: confirm them"
+        )
     scheme = b.fact("basics", "auth_scheme", "auth.scheme")
     credentials: dict[str, dict[str, Any]] = {}
     if scheme == "basic":

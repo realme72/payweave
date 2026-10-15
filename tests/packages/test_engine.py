@@ -304,3 +304,42 @@ def test_timestamped_scheme_needs_its_header() -> None:
         Manifest.model_validate(manifest_with(webhooks__scheme="timestamped_hmac_sha256_base64"))
     with pytest.raises(ValueError, match="or the auth secret"):
         Manifest.model_validate(manifest_with(webhooks__secrets_credential="key_id"))
+
+
+async def test_test_keys_go_to_the_sandbox_host() -> None:
+    seen: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=fx.refund())
+
+    data = manifest_with(
+        api__sandbox_base_url="https://sandbox.razorpay.example/v1/",
+        api__allowed_hosts=["api.razorpay.com", "sandbox.razorpay.example"],
+    )
+    package = load_package_from_sources(tomli_w.dumps(data), MAPPERS)
+    gw: Any = GatewayFactory([PackageProvider(package, allow_unsigned=True)]).create(
+        "razorpay",
+        {"key_id": fx.KEY_ID, "key_secret": "s"},
+        context=GatewayContext(name="razorpay", http_transport=httpx.MockTransport(respond)),
+    )
+    await gw.get_refund("rfnd_00000000000001")
+    assert seen[0].url.host == "sandbox.razorpay.example"
+    await gw.aclose()
+    with pytest.raises(ValueError, match="sandbox_base_url host"):
+        Manifest.model_validate(manifest_with(api__sandbox_base_url="https://evil.example/v1/"))
+
+
+def test_sdk_reads_iso_times_and_decimal_amounts_exactly() -> None:
+    from payweave.packages import sdk  # noqa: PLC0415
+
+    assert sdk.from_iso("2026-10-15T13:05:20+05:30").utcoffset() is not None
+    assert sdk.money_major(10.01, "INR") == sdk.Money.of(1001, "INR")
+    assert sdk.money_major(1, "INR") == sdk.Money.of(100, "INR")
+    assert sdk.major_amount(sdk.Money.of(1001, "INR")) == 10.01
+    for bad in (10.001, True, None, "abc"):
+        with pytest.raises(sdk.MappingError):
+            sdk.money_major(bad, "INR")
+    for bad_ts in ("2026-10-15T13:05:20", 1700000000, "yesterday"):
+        with pytest.raises(sdk.MappingError):
+            sdk.from_iso(bad_ts)

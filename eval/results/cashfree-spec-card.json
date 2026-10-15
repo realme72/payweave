@@ -12,8 +12,13 @@
         ]
       },
       "auth_scheme": {
-        "value": null,
-        "citations": []
+        "value": "api_key_headers",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__preauth-journey.md#2",
+            "quote": "Use `x-client-id` and `x-client-secret` to authenticate calls to the [Create Order](/docs/api-reference/payments/latest/orders/create-order) API and the [Preauthorisation](/docs/api-reference/payments/latest/payments/preauthorisation) API."
+          }
+        ]
       },
       "amount_unit": {
         "value": "major_unit",
@@ -21,6 +26,15 @@
           {
             "ref": "cashfree:api-reference__payments__latest__orders__create-order.md#12",
             "quote": "Bill amount for the order. Provide upto two decimals. 10.15 means Rs 10 and 15 paisa."
+          }
+        ]
+      },
+      "sandbox_base_url": {
+        "value": "https://sandbox.cashfree.com/pg",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__overview.md#2",
+            "quote": "| Test | `https://sandbox.cashfree.com/pg` |"
           }
         ]
       }
@@ -121,7 +135,7 @@
         "citations": [
           {
             "ref": "cashfree:api-reference__payments__latest__webhooks__signature-verification.md#1",
-            "quote": "* The actual signature is present in the header `x-webhook-signature`."
+            "quote": "The actual signature is present in the header `x-webhook-signature`."
           }
         ]
       },
@@ -129,8 +143,8 @@
         "value": "timestamped_hmac_sha256",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__webhooks__overview.md#11",
-            "quote": "timestamp := 1617695238078;\nsignedPayload := $timestamp.$payload;\nexpectedSignature := Base64Encode(HMACSHA256($signedPayload, $merchantSecretKey));"
+            "ref": "cashfree:api-reference__payments__latest__webhooks__signature-verification.md#2",
+            "quote": "expectedSignature := Base64Encode(HMACSHA256($signedPayload, $merchantSecretKey));"
           }
         ]
       },
@@ -147,8 +161,8 @@
         "value": "x-idempotency-key",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__payments__webhooks.md#3",
-            "quote": "| x-idempotency-key | n9rn7079wqXcse3GEDEXCYle9ajXmU0SUQY8zrUNAlc= |"
+            "ref": "cashfree:api-reference__payments__latest__payments__webhooks.md#2",
+            "quote": "| x-idempotency-key | A5UkesCnpkM4gGG+RpMLQ9coTGyN56UWXPoQjfYeuII= |"
           }
         ]
       },
@@ -161,27 +175,45 @@
         "citations": [
           {
             "ref": "cashfree:api-reference__payments__latest__webhooks__overview.md#6",
-            "quote": "In case of inadvertent downtimes at Cashfree or your end, Cashfree may attempt duplicate webhook delivery to ensure fulfilment."
+            "quote": "Cashfree uses **at-least-once** delivery to prevent missed webhook notifications."
+          }
+        ]
+      },
+      "timestamp_header": {
+        "value": "x-webhook-timestamp",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__webhooks__signature-verification.md#1",
+            "quote": "The timestamp is present in the header `x-webhook-timestamp`."
+          }
+        ]
+      },
+      "signature_encoding": {
+        "value": "base64",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__webhooks__signature-verification.md#2",
+            "quote": "expectedSignature := Base64Encode(HMACSHA256($signedPayload, $merchantSecretKey));"
           }
         ]
       }
     },
     "errors": {
       "error_code_field": {
-        "value": "code",
+        "value": "type",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__payments__get-payments-for-an-order.md#13",
-            "quote": "properties:\n        message:\n          type: string\n        code:\n          type: string\n        type:\n          type: string\n          description: authentication_error."
+            "ref": "observed:sandbox",
+            "quote": "{\"type\": \"invalid_request_error\"}"
           }
         ]
       },
       "reason_field": {
-        "value": "message",
+        "value": "code",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__payments__get-payments-for-an-order.md#13",
-            "quote": "properties:\n        message:\n          type: string\n        code:\n          type: string\n        type:\n          type: string\n          description: authentication_error."
+            "ref": "observed:sandbox",
+            "quote": "{\"code\": \"order_not_found\"}"
           }
         ]
       }
@@ -285,28 +317,71 @@
         "citations": []
       }
     },
+    "auth_headers": {
+      "key_id_header": {
+        "value": "x-client-id",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__preauth-journey.md#2",
+            "quote": "Use `x-client-id` and `x-client-secret` to authenticate calls to the [Create Order](/docs/api-reference/payments/latest/orders/create-order) API and the [Preauthorisation](/docs/api-reference/payments/latest/payments/preauthorisation) API."
+          }
+        ]
+      },
+      "secret_header": {
+        "value": "x-client-secret",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__preauth-journey.md#2",
+            "quote": "Use `x-client-id` and `x-client-secret` to authenticate calls to the [Create Order](/docs/api-reference/payments/latest/orders/create-order) API and the [Preauthorisation](/docs/api-reference/payments/latest/payments/preauthorisation) API."
+          }
+        ]
+      },
+      "version_header": {
+        "value": "x-api-version",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__preauth-journey.md#2",
+            "quote": "Send a supported API version in `x-api-version` (for example, `2025-01-01`), consistent with your integration."
+          }
+        ]
+      },
+      "api_version": {
+        "value": "2026-01-01",
+        "citations": [
+          {
+            "ref": "cashfree:api-reference__payments__latest__orders__create-order.md#6",
+            "quote": "default: '2026-01-01'\n      example: '2026-01-01'"
+          }
+        ]
+      }
+    },
     "error_shape": {
       "message_path": {
         "value": "message",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__payments__preauthorisation.md#15",
-            "quote": "message: order with same id is already present"
+            "ref": "observed:sandbox",
+            "quote": "{\"message\": \"Order Reference Id does not exist\"}"
           }
         ]
       },
       "code_path": {
-        "value": "code",
+        "value": "type",
         "citations": [
           {
-            "ref": "cashfree:api-reference__payments__latest__payments__preauthorisation.md#15",
-            "quote": "code: order_already_exists"
+            "ref": "observed:sandbox",
+            "quote": "{\"type\": \"invalid_request_error\"}"
           }
         ]
       },
       "reason_path": {
-        "value": null,
-        "citations": []
+        "value": "code",
+        "citations": [
+          {
+            "ref": "observed:sandbox",
+            "quote": "{\"code\": \"order_not_found\"}"
+          }
+        ]
       },
       "idempotency_conflict_message": {
         "value": null,

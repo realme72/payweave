@@ -173,7 +173,13 @@ SPECS: dict[str, MapperSpec] = {
             "-> dict[str, Any]",
             """\
 The JSON body that creates the intent object (manifest operations.create_payment).
-- Amount and currency from request.amount (amount_minor if the gateway uses minor units).
+- Amount and currency from request.amount: request.amount.amount_minor if the gateway
+  takes minor units, major_amount(request.amount) if it takes decimal major units.
+- If the object needs an id chosen by the merchant (e.g. an order id), use
+  request.idempotency_key made safe for the gateway's id format.
+- Customer details the gateway requires come from request.customer (id, phone, email,
+  name; each may be None). Never invent or default them: if the gateway requires one
+  that is missing, raise MappingError naming it.
 - request.merchant_reference goes in the object's merchant-reference/receipt field.
 - The object's free-form notes/metadata field gets request.metadata plus two reserved
   keys: "pw_idempotency_key": request.idempotency_key and
@@ -204,8 +210,11 @@ primary: the intent object (GET operations.get_payment.primary, or the create re
 related: responses of operations.get_payment.related by name (e.g. related["payments"],
   a list response of the object's payment attempts); a name is absent right after create.
 Build PaymentIntent:
-- gateway=ctx.gateway, gateway_intent_id=the object's id, created_at=from_unix(...).
-- amount=money(amount, currency) of the object.
+- gateway=ctx.gateway, gateway_intent_id=the id the API's paths take for this object
+  (the merchant's order id where the paths use it), created_at=from_unix(...) for unix
+  seconds or from_iso(...) for ISO 8601 strings.
+- amount=money(amount, currency) for minor units, money_major(amount, currency) for
+  decimal major-unit amounts (use the same helper for every amount of this gateway).
 - attempts: one PaymentAttempt per payment, sorted by created_at. Map the native payment
   status to AttemptStatus (raise MappingError for any other). amount_refunded from the
   payment's refunded amount (zero unless CAPTURED). An authorized payment the gateway
@@ -218,7 +227,9 @@ Build PaymentIntent:
 - status: if any CAPTURED attempt: CAPTURED if nothing refunded, PARTIALLY_REFUNDED if
   some, REFUNDED if all of amount_captured; elif any AUTHORIZED: AUTHORIZED; elif any
   VOIDED: VOIDED; else REQUIRES_ACTION with next_action=ClientCheckout(gateway=
-  ctx.gateway, params={"key_id": ctx.public["key_id"], "<intent object>_id": <its id>}).
+  ctx.gateway, params=<the public values the gateway's browser checkout opens with>):
+  e.g. {"key_id": ctx.public["key_id"], "order_id": <its id>}, or the session token the
+  object carries for the browser (e.g. {"payment_session_id": ...}). Never a secret.
 - metadata: the object's notes minus keys starting "pw_" (notes may be {} or [] when
   empty); capture_mode=CaptureMode(notes["pw_capture_mode"]) if present, else None;
   merchant_reference: the object's merchant-reference/receipt field or None.""",
@@ -238,7 +249,8 @@ FailureCategory.UNKNOWN) exactly when FAILED, else None.""",
             "def webhook_event(body: Json, event_id: str, ctx: MapperContext) -> WebhookEvent",
             """\
 A verified webhook body -> WebhookEvent(gateway=ctx.gateway, event_id=event_id,
-event_type, gateway_event_type=<native event name>, occurred_at=from_unix(<event time>),
+event_type, gateway_event_type=<native event name>, occurred_at=<event time> via
+from_unix or from_iso,
 gateway_intent_id, gateway_refund_id). Carry ids only:
 - Events about a payment or the intent object -> WebhookEventType.INTENT_UPDATED with
   gateway_intent_id = the intent object's id (from the payment's reference to it, or
@@ -562,6 +574,17 @@ def route_findings(report: Mapping[str, Any]) -> dict[str, list[str]]:
     for line in g5.get("output", []):
         if m := re.search(r"mapper (\w+) failed", line):
             add(m.group(1), f"contract suite: {line.strip()}")
+    # G6: the real sandbox. A rejected request is the body mapper's; a bad reading of a
+    # response is the result mapper's.
+    for item in report.get("gates", {}).get("G6", {}).get("findings", []):
+        if m := re.search(r"mapper (\w+) failed", item):
+            add(m.group(1), f"sandbox: {item}")
+        elif item.startswith("step create: InvalidRequestError"):
+            add("create_payment_body", f"sandbox rejected the request: {item}")
+        elif "refund" in item.split(":", 1)[0]:
+            add("refund", f"sandbox: {item}")
+        else:
+            add("intent", f"sandbox: {item}")
     return routed
 
 

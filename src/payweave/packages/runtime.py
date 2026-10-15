@@ -235,7 +235,10 @@ class PackageGateway:
         )
         self._client = client or PackageHttpClient(
             gateway=context.name,
-            base_url=m.api.base_url,
+            # Test keys only work on the sandbox host where the gateway has one.
+            base_url=m.api.base_url
+            if getattr(config, "allow_live")  # noqa: B009
+            else m.api.sandbox_base_url or m.api.base_url,
             allowed_hosts=m.api.allowed_hosts,
             auth=http_auth(
                 m.auth.scheme,

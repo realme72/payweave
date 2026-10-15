@@ -82,12 +82,27 @@ class CaptureMode(StrEnum):
     MANUAL = "manual"  # authorise only; merchant captures later
 
 
+class Customer(_Model):
+    """Who pays, for gateways that require it on every order (Cashfree).
+
+    Always supplied by the merchant; a mapper never makes these up.
+    """
+
+    id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,50}$")]
+    phone: Annotated[str, Field(pattern=r"^\+?[0-9]{8,15}$")] | None = None
+    email: Annotated[str, Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=100)] | None = (
+        None
+    )
+    name: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+
+
 class CreatePaymentRequest(_Model):
     amount: Money
     merchant_reference: Annotated[str, Field(min_length=1, max_length=40)]
     idempotency_key: IdempotencyKey
     capture_mode: CaptureMode = CaptureMode.AUTOMATIC
     metadata: Metadata = Field(default_factory=dict)
+    customer: Customer | None = None
 
     @model_validator(mode="after")
     def _positive_amount(self) -> Self:

@@ -15,6 +15,8 @@ api_base_url = "https://api.cashfree.com/pg"   # sandbox: https://sandbox.cashfr
 # "other" stays correct because it was the right answer when the key was written.
 auth_scheme = ["other", "api_key_headers"]
 amount_unit = "major_unit"       # order_amount is a number, e.g. 10.01 (rupees)
+# Added 2026-10-15, written before its first run: test keys only work here.
+sandbox_base_url = "https://sandbox.cashfree.com/pg"
 
 [payment_flow]
 intent_object = "order"

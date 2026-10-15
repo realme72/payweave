@@ -84,18 +84,25 @@ class Api(_Strict):
     # Hosts a human confirmed from the docs (spec card). Requests go nowhere else.
     allowed_hosts: tuple[str, ...] = Field(min_length=1)
     headers: dict[HeaderName, HeaderValue] = Field(default_factory=dict)  # sent on every request
+    # Where test keys work, if not base_url (Cashfree: sandbox.cashfree.com). Used unless
+    # the instance sets allow_live.
+    sandbox_base_url: str | None = None
 
     @model_validator(mode="after")
     def _check(self) -> Self:
-        url = urlsplit(self.base_url)
-        if url.scheme != "https" or not url.hostname:
-            raise ValueError("base_url must be an https URL")
-        if url.hostname not in self.allowed_hosts:
-            raise ValueError(f"base_url host {url.hostname!r} is not in allowed_hosts")
-        if url.query or url.fragment or url.username or url.password:
-            raise ValueError("base_url must not carry a query, fragment or credentials")
-        if not self.base_url.endswith("/"):
-            raise ValueError("base_url must end with '/'")
+        for name in ("base_url", "sandbox_base_url"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            url = urlsplit(value)
+            if url.scheme != "https" or not url.hostname:
+                raise ValueError(f"{name} must be an https URL")
+            if url.hostname not in self.allowed_hosts:
+                raise ValueError(f"{name} host {url.hostname!r} is not in allowed_hosts")
+            if url.query or url.fragment or url.username or url.password:
+                raise ValueError(f"{name} must not carry a query, fragment or credentials")
+            if not value.endswith("/"):
+                raise ValueError(f"{name} must end with '/'")
         if reserved := {h.lower() for h in self.headers} & _RESERVED_HEADERS:
             raise ValueError(f"api.headers may not set {sorted(reserved)}")
         return self

@@ -10,21 +10,21 @@ errors) and Groq qwen3.8-27b (payment_flow, ids, checkout_return; endpoints,
 error_shape and capture after the fixes below), each section's facts re-checked
 against its citations.
 
-**22/28 correct, 3 wrong, 3 abstained.** Reproduce with
+**34/35 correct, 0 wrong, 1 abstained** (`webhooks.ordered_delivery`). Reproduce with
 `uv run python -m payweave.agent score eval/results/cashfree-spec-card.json`.
 
 | Step | Score |
 | --- | --- |
-| First complete card | 16 correct, 2 wrong, 10 abstained |
-| + endpoint index (one citable passage per API page) for endpoints and capture | endpoints 2/6 → 6/6, void found |
-| + OpenAPI YAML examples accepted as sample bodies (`message:` as well as `"message":`) | error_shape message found |
-| **Now** | **22 correct, 3 wrong, 3 abstained** |
+| First complete card | 16 correct, 2 wrong, 10 abstained (of 28) |
+| + endpoint index for endpoints and capture | endpoints 2/6 → 6/6, void found |
+| + OpenAPI YAML examples accepted as sample bodies | error_shape message found |
+| + new fields, answers written before their runs: auth_headers (4), sandbox_base_url, webhooks timestamp_header and signature_encoding; `api_key_headers` added as an auth choice | 30/35, 3 wrong |
+| + **sandbox error probe** (verify/error_probe.py): three harmless failing requests; `type` stayed `invalid_request_error`, `code` changed every time | errors + error_shape: 3 wrong and 1 abstained → all correct |
 
-Prompts were not tuned on the wrong answers below; that would fit the holdout.
+The four error fields are cited `observed:sandbox`: evidence from Cashfree's own API, not
+a reading of its docs. Without it the docs-only score is 30/35 with 3 wrong.
 
-- Wrong: `errors.error_code_field = code`, `errors.reason_field = message`, and
-  `error_shape.code_path = code` (its quote, `code: order_already_exists`, didn't show
-  `type`, which carries the broad code).
+Prompts were not tuned on the wrong answers; the sandbox settled them instead.
 - Not in the key, checked by hand: `api_keys` and `checkout_return` all null (correct:
   the docs show no key prefixes and nothing is signed on return); `ids` are real samples,
   but `cf_order_id` is Cashfree's id, while the paths take the merchant's `order_id`.

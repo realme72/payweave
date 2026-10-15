@@ -109,13 +109,23 @@ def checked_card(gateway: str, paths: list[Path]) -> SpecCard:
 
 
 def merge_cards(gateway: str, paths: list[Path]) -> SpecCard:
-    """Accepted sections from several runs; a later file wins for the same section."""
+    """Accepted sections from several runs; a later file wins, field by field.
+
+    Runs submit whole sections, so for them this is "the later section wins". Sandbox
+    observations (``<gateway>-observed-*.json``) carry only the fields they settled.
+    """
     merged: dict[str, Any] = {"gateway": gateway}
     for path in paths:
         card = json.loads(path.read_text())["card"]
         if card["gateway"] != gateway:
             raise SystemExit(f"{path} is a {card['gateway']} card, not {gateway}")
-        merged |= {k: v for k, v in card.items() if k != "gateway" and v is not None}
+        for name, section in card.items():
+            if name != "gateway" and section is not None:
+                merged[name] = {**(merged.get(name) or {}), **section}
+    for cls in SECTIONS:  # a section only observed so far: the rest of it is unknown
+        if cls.TITLE in merged:
+            unknown: dict[str, Any] = {"value": None, "citations": []}
+            merged[cls.TITLE] = {f: unknown for f in cls.model_fields} | merged[cls.TITLE]
     return SpecCard.model_validate(merged)
 
 
@@ -158,6 +168,16 @@ def probe_errors(
     return seen
 
 
+def save_observed(gateway: str, seen: Any) -> Path:
+    """Keep what the sandbox showed as a card file, so scoring and later runs use it."""
+    from payweave.verify.error_probe import observed_card  # noqa: PLC0415
+
+    path = RUNS / f"{gateway}-observed-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.json"
+    path.write_text(json.dumps({"card": {"gateway": gateway} | observed_card(seen)}, indent=2))
+    print(f"sandbox observations -> {path} (pass it with the other card files)")
+    return path
+
+
 def compile_draft(
     gateway: str,
     paths: list[Path],
@@ -182,7 +202,9 @@ def compile_draft(
     out = compile_()
     if sandbox_url:
         # Compile once from the card, ask the sandbox, then compile again with what it showed.
-        out = compile_(probe_errors(out.manifest, sandbox_url, key_id_env, secret_env))
+        seen = probe_errors(out.manifest, sandbox_url, key_id_env, secret_env)
+        out = compile_(seen)
+        save_observed(gateway, seen)
     draft = DRAFTS / gateway / f"{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     draft.mkdir(parents=True)
     (draft / "manifest.toml").write_text(out.toml())

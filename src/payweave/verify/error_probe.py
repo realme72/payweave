@@ -16,6 +16,7 @@ reasons; otherwise that path stays None (and the card's value stands).
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -74,6 +75,47 @@ def infer_error_shape(bodies: Sequence[object]) -> ErrorShapeObserved:
         bodies=len(leaves),
         evidence=evidence,
     )
+
+
+OBSERVED_REF = "observed:sandbox"
+
+
+def _sample(path: str, value: str) -> str:
+    """The observed value as the JSON it came in: 'error.code' -> {"error": {"code": "X"}}."""
+    node: object = value
+    for key in reversed(path.split(".")):
+        node = {key: node}
+    return json.dumps(node)
+
+
+def observed_card(seen: ErrorShapeObserved) -> dict[str, dict[str, Any]]:
+    """Card sections from what the sandbox showed, cited as ``observed:sandbox``.
+
+    Only settled paths become facts; the quote is the value as the response sent it, so
+    the usual quote checks still hold. These are evidence from the gateway itself, not a
+    reading of its docs, and the score report says so.
+    """
+
+    def fact(path: str | None, value: str | None = None) -> dict[str, Any] | None:
+        if path is None:
+            return None
+        sample = _sample(path, seen.evidence.get(path, [""])[0])
+        return {"value": value or path, "citations": [{"ref": OBSERVED_REF, "quote": sample}]}
+
+    shape = {
+        "message_path": fact(seen.message_path),
+        "code_path": fact(seen.code_path),
+        "reason_path": fact(seen.reason_path),
+    }
+    leaf = {p: p.rsplit(".", 1)[-1] if p else None for p in (seen.code_path, seen.reason_path)}
+    errors = {
+        "error_code_field": fact(seen.code_path, leaf[seen.code_path]),
+        "reason_field": fact(seen.reason_path, leaf[seen.reason_path]),
+    }
+    return {
+        name: {k: v for k, v in section.items() if v is not None}
+        for name, section in (("error_shape", shape), ("errors", errors))
+    }
 
 
 async def probe_error_shape(
