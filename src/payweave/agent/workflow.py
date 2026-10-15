@@ -41,6 +41,7 @@ MAPPER_FACT_SECTIONS = ("basics", "payment_flow", "capture", "refunds")
 class BuildState(TypedDict, total=False):
     gateway: str
     observed_test_key_prefix: str | None  # from the configured sandbox key, never the key
+    observed_test_key_on: str  # which credential that key is (key_id / secret_key)
     card: dict[str, Any]  # SpecCard JSON; sections may be null
     extraction: list[dict[str, Any]]  # per-section outcome of each extraction pass
     card_review: dict[str, Any]  # {"approved": bool, "by": str, "note": str}
@@ -119,7 +120,13 @@ def build_graph(
 ) -> CompiledStateGraph[BuildState, None, BuildState, BuildState]:
     async def extract(state: BuildState) -> BuildState:
         card = dict(state.get("card") or {"gateway": state["gateway"]})
-        missing = [cls for cls in SECTIONS if card.get(cls.TITLE) is None]
+        facts = known_facts(card)
+        missing = [
+            cls
+            for cls in SECTIONS
+            if card.get(cls.TITLE) is None
+            and (cls.ONLY_IF is None or facts.get(cls.ONLY_IF[0]) == cls.ONLY_IF[1])
+        ]
         if not missing or deps.llm is None or deps.docs is None:
             return {"card": card, "status": "running"}
         run = await extract_card(
@@ -127,7 +134,7 @@ def build_graph(
             deps.docs,
             state["gateway"],
             sections=missing,
-            known=known_facts(card),
+            known=facts,
             log=deps.log,
         )
         found = run.card.model_dump(mode="json")
@@ -163,6 +170,7 @@ def build_graph(
         out = compile_manifest(
             SpecCard.model_validate(state["card"]),
             observed_test_key_prefix=state.get("observed_test_key_prefix"),
+            observed_on=state.get("observed_test_key_on", "key_id"),
         )
         return {
             "compiled": {

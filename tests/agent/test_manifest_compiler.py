@@ -89,7 +89,7 @@ def razorpay_card(**overrides: dict[str, Any] | None) -> dict[str, Any]:
         },
     }
     for section, fields in overrides.items():
-        card[section] = None if fields is None else {**card[section], **fields}
+        card[section] = None if fields is None else {**card.get(section, {}), **fields}
     return card
 
 
@@ -147,11 +147,11 @@ async def test_compiled_manifest_behaves_like_the_reference() -> None:
     [
         ({"basics": {"auth_scheme": c("oauth2_client_credentials")}}, "hand-written auth"),
         ({"endpoints": {"capture": c("POST /v2/payments/:id/capture")}}, "can't place"),
-        ({"endpoints": {"refund": c("POST /v1/payments/refund")}}, "exactly one id"),
+        ({"endpoints": {"refund": c("POST /v1/payments/refund")}}, "with its ids"),
         ({"ids": {"refund_id_example": none()}}, "ids.refund: needs ids.refund_id_example"),
         (
             {"webhooks": {"signature_algorithm": c("timestamped_hmac_sha256")}},
-            "hand-written scheme",
+            "needs webhooks.signature_encoding",
         ),
         ({"endpoints": None}, "endpoints missing"),
     ],
@@ -215,6 +215,9 @@ def test_live_guard_from_the_configured_test_key_when_docs_are_silent() -> None:
     assert out.manifest["live_guard"] == {"credential": "key_id", "test_pattern": "^rzp_test_"}
     assert out.provenance["live_guard"][0]["ref"] == "observed:configured-test-key"
     assert test_key_prefix("app_1234") is None  # no test marker: don't guess
+    # Nothing after the test marker may leak, even when the secret has underscores.
+    assert test_key_prefix("cfsk_ma_test_0123abcd_ef45") == "cfsk_ma_test_"
+    assert test_key_prefix("sk_test") is None  # the marker must be followed by the key
 
 
 def test_test_pattern_guard_fails_closed() -> None:
@@ -236,3 +239,69 @@ def test_test_pattern_guard_fails_closed() -> None:
     factory.create(
         "razorpay", {"key_id": "rzp_prod_Unexpected1", "key_secret": "s", "allow_live": True}
     )
+
+
+def test_header_auth_relative_paths_and_intent_scoped_operations() -> None:
+    """Cashfree's shape: x-client-id/x-client-secret, a version header, paths written
+    relative to the base URL (.../pg), and capture/refund through the order id."""
+    card = razorpay_card(
+        basics={
+            "api_base_url": c("https://api.cashfree.com/pg"),
+            "auth_scheme": c("api_key_headers"),
+        },
+        auth_headers={
+            "key_id_header": c("x-client-id"),
+            "secret_header": c("x-client-secret"),
+            "version_header": c("x-api-version"),
+            "api_version": c("2026-01-01"),
+        },
+        endpoints={
+            "create_intent": c("POST /orders"),
+            "get_intent": c("GET /orders/{order_id}"),
+            "list_attempts": c("GET /orders/{order_id}/payments"),
+            "capture": c("POST /orders/{order_id}/authorization"),
+            "refund": c("POST /orders/{order_id}/refunds"),
+            "get_refund": c("GET /orders/{order_id}/refunds/{refund_id}"),
+        },
+        api_keys={"test_key_prefix": none(), "live_key_prefix": none(), "prefixed_key": none()},
+        checkout_return=None,
+    )
+    out = compile_manifest(
+        SpecCard.model_validate(card),
+        observed_test_key_prefix="cfsk_ma_test_",
+        observed_on="secret_key",
+    )
+    assert out.ok, (out.gaps, out.problems)
+    m = out.manifest
+    assert m["api"]["headers"] == {"x-api-version": "2026-01-01"}
+    assert m["auth"] == {
+        "scheme": "api_key_headers",
+        "username": "key_id",
+        "password": "key_secret",
+        "username_header": "x-client-id",
+        "password_header": "x-client-secret",
+    }
+    assert m["live_guard"] == {"credential": "key_secret", "test_pattern": "^cfsk_ma_test_"}
+    paths = {
+        "create": m["operations"]["create_payment"]["path"],
+        "get": m["operations"]["get_payment"]["primary"]["path"],
+        "attempts": m["operations"]["get_payment"]["related"]["payments"]["path"],
+        "capture": m["operations"]["capture"]["path"],
+        "refund": m["operations"]["refund"]["path"],
+        "get_refund": m["operations"]["get_refund"]["path"],
+    }
+    assert paths == {
+        "create": "orders",
+        "get": "orders/{intent_id}",
+        "attempts": "orders/{intent_id}/payments",
+        "capture": "orders/{intent_id}/authorization",
+        "refund": "orders/{intent_id}/refunds",
+        "get_refund": "orders/{intent_id}/refunds/{refund_id}",
+    }
+    assert any("relative to the base URL" in n for n in out.notes)
+
+
+def test_mixed_path_styles_stay_gaps() -> None:
+    card = razorpay_card(endpoints={"capture": c("POST /payments/:id/capture")})
+    out = compile_manifest(SpecCard.model_validate(card))
+    assert any(g.startswith("operations.capture: can't place") for g in out.gaps), out.gaps

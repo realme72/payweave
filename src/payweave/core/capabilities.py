@@ -90,7 +90,12 @@ class PaymentReader(Gateway, Protocol):
 
 @runtime_checkable
 class RefundReader(Gateway, Protocol):
-    async def get_refund(self, gateway_refund_id: str) -> Refund: ...
+    async def get_refund(
+        self, gateway_refund_id: str, *, gateway_intent_id: str | None = None
+    ) -> Refund:
+        """``gateway_intent_id`` is needed by gateways that look refunds up through
+        the intent (Cashfree); others ignore it."""
+        ...
 
 
 @runtime_checkable

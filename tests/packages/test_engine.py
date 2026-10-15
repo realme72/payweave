@@ -1,11 +1,18 @@
+import base64
+import hashlib
+import hmac
+import json
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+import tomli_w
 
-from payweave.core.errors import UnknownGatewayError
-from payweave.core.factory import GatewayFactory
+from payweave.core.errors import InvalidRequestError, InvalidSignatureError, UnknownGatewayError
+from payweave.core.factory import GatewayContext, GatewayFactory
 from payweave.gateways.razorpay import mapping
 from payweave.packages.manifest import Manifest
 from payweave.packages.runtime import (
@@ -106,11 +113,54 @@ def test_razorpay_manifest_is_valid() -> None:
         ({"checkout_return__message_template": "{x.__class__}"}, "plain parameter names"),
         ({"credentials__key_id__secret": True}, "both secret and public"),
         ({"unexpected": 1}, "Extra inputs"),
+        ({"api__headers": {"Authorization": "x"}}, "may not set"),
+        ({"api__headers": {"x-api-version": "a b"}}, "pattern"),
+        ({"auth__scheme": "api_key_headers"}, "needs both header names"),
+        ({"auth__username_header": "x-client-id"}, "take none"),
+        ({"operations__get_refund__path": "refunds/{attempt_id}"}, "may only use"),
     ],
 )
 def test_manifest_rejects(changes: dict[str, Any], problem: str) -> None:
     with pytest.raises(ValueError, match=problem):
         Manifest.model_validate(manifest_with(**changes))
+
+
+def header_auth_gateway(seen: list[httpx.Request]) -> Any:
+    """The Razorpay package switched to api_key_headers and an intent-scoped get_refund."""
+    data = manifest_with(
+        auth__scheme="api_key_headers",
+        auth__username_header="x-client-id",
+        auth__password_header="x-client-secret",  # noqa: S106 - a header name
+        api__headers={"x-api-version": "2026-01-01"},
+        operations__get_refund__path="orders/{intent_id}/refunds/{refund_id}",
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=fx.refund())
+
+    package = load_package_from_sources(tomli_w.dumps(data), MAPPERS)
+    return GatewayFactory([PackageProvider(package, allow_unsigned=True)]).create(
+        "razorpay",
+        {"key_id": fx.KEY_ID, "key_secret": "s3cret"},
+        context=GatewayContext(name="razorpay", http_transport=httpx.MockTransport(respond)),
+    )
+
+
+async def test_api_key_headers_auth_and_intent_scoped_refund_lookup() -> None:
+    seen: list[httpx.Request] = []
+    gw = header_auth_gateway(seen)
+    refund = await gw.get_refund("rfnd_00000000000001", gateway_intent_id=fx.ORDER_ID)
+    assert refund.gateway_refund_id == fx.refund()["id"]
+    [request] = seen
+    assert request.url.path == f"/v1/orders/{fx.ORDER_ID}/refunds/rfnd_00000000000001"
+    assert request.headers["x-client-id"] == fx.KEY_ID
+    assert request.headers["x-client-secret"] == "s3cret"
+    assert request.headers["x-api-version"] == "2026-01-01"
+    assert "authorization" not in request.headers
+    with pytest.raises(InvalidRequestError, match="pass gateway_intent_id"):
+        await gw.get_refund("rfnd_00000000000001")
+    await gw.aclose()
 
 
 # --- loading --------------------------------------------------------------------------------
@@ -198,3 +248,59 @@ def test_builtins_missing_from_the_sandbox_are_caught_statically() -> None:
     assert any("builtin 'float' isn't available" in p for p in problems)
     # A local that happens to share a builtin's name is fine.
     assert check_source("def f(iter: int) -> int:\n    return iter + 1\n") == []
+
+
+# --- timestamped webhooks (Cashfree's scheme) --------------------------------------------
+
+NOW = datetime(2026, 10, 15, 8, 0, tzinfo=UTC)
+
+
+def timestamped_gateway() -> Any:
+    data = manifest_with(
+        webhooks__scheme="timestamped_hmac_sha256_base64",
+        webhooks__timestamp_header="x-webhook-timestamp",
+        webhooks__secrets_credential="key_secret",  # signed with the API secret
+    )
+    package = load_package_from_sources(tomli_w.dumps(data), MAPPERS)
+    return GatewayFactory([PackageProvider(package, allow_unsigned=True)]).create(
+        "razorpay",
+        {"key_id": fx.KEY_ID, "key_secret": "s3cret"},
+        context=GatewayContext(name="razorpay", clock=lambda: NOW),
+    )
+
+
+def signed(body: bytes, stamp: str, secret: str = "s3cret") -> dict[str, str]:  # noqa: S107
+    # The same computation as Cashfree's SDK: Base64(HMAC-SHA256(timestamp + rawBody)).
+    digest = hmac.new(secret.encode(), stamp.encode() + body, hashlib.sha256).digest()
+    return {
+        "X-Webhook-Signature": base64.b64encode(digest).decode(),
+        "x-webhook-timestamp": stamp,
+        "X-Razorpay-Event-Id": "evt_1",
+    }
+
+
+async def test_timestamped_webhook_signature() -> None:
+    gw = timestamped_gateway()
+    body = json.dumps(fx.webhook("refund.processed", refund=fx.refund())).encode()
+    stamp = str(int(NOW.timestamp() * 1000))  # Cashfree sends milliseconds
+    headers = signed(body, stamp)
+    headers["X-Razorpay-Signature"] = headers.pop("X-Webhook-Signature")
+    assert gw.verify_and_parse(body, headers).event_id == "evt_1"
+
+    stale = str(int((NOW.timestamp() - 3600) * 1000))
+    old = signed(body, stale)
+    old["X-Razorpay-Signature"] = old.pop("X-Webhook-Signature")
+    with pytest.raises(InvalidSignatureError, match="too old"):
+        gw.verify_and_parse(body, old)
+
+    moved = dict(headers, **{"x-webhook-timestamp": str(int(stamp) + 1)})  # not what was signed
+    with pytest.raises(InvalidSignatureError, match="did not verify"):
+        gw.verify_and_parse(body, moved)
+    await gw.aclose()
+
+
+def test_timestamped_scheme_needs_its_header() -> None:
+    with pytest.raises(ValueError, match="need timestamp_header"):
+        Manifest.model_validate(manifest_with(webhooks__scheme="timestamped_hmac_sha256_base64"))
+    with pytest.raises(ValueError, match="or the auth secret"):
+        Manifest.model_validate(manifest_with(webhooks__secrets_credential="key_id"))

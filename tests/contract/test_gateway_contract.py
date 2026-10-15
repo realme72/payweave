@@ -339,14 +339,17 @@ async def test_get_refund_round_trips(h: GatewayHarness) -> None:
     need(h, Capability.REFUND, Capability.GET_REFUND, Capability.PARTIAL_REFUND)
     intent = await captured_intent(h)
     created = await refund(h, intent.gateway_intent_id, 10000)
-    fetched = await op(h, RefundReader).get_refund(created.gateway_refund_id)
+    reader = op(h, RefundReader)
+    fetched = await reader.get_refund(
+        created.gateway_refund_id, gateway_intent_id=intent.gateway_intent_id
+    )
     assert (fetched.gateway_refund_id, fetched.amount, fetched.gateway_attempt_id) == (
         created.gateway_refund_id,
         created.amount,
         created.gateway_attempt_id,
     )
     with pytest.raises(InvalidRequestError):
-        await op(h, RefundReader).get_refund(h.unknown_refund_id)
+        await reader.get_refund(h.unknown_refund_id, gateway_intent_id=intent.gateway_intent_id)
 
 
 # --- signed inputs -----------------------------------------------------------------------

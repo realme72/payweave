@@ -64,6 +64,8 @@ class Section(BaseModel):
     PATHS: ClassVar[frozenset[str]] = frozenset()
     # Values that must be quoted as a JSON string from a sample response ("...").
     JSON_STRINGS: ClassVar[frozenset[str]] = frozenset()
+    # Extract only when an earlier fact has this value ("section.field", value).
+    ONLY_IF: ClassVar[tuple[str, str] | None] = None
     # Show the gateway's endpoint index (one passage per API page) in the first message.
     ENDPOINT_INDEX: ClassVar[bool] = False
     # Facts from earlier sections this one builds on ("section.field"), shown in its prompt.
@@ -82,8 +84,12 @@ class Basics(Section):
         description="Base URL of the server-side REST API, up to and including any version "
         "segment, e.g. https://api.example.com/v2"
     )
-    auth_scheme: Cited[Literal["basic", "bearer", "oauth2_client_credentials", "other"]] = Field(
-        description="How server-side API requests authenticate"
+    auth_scheme: Cited[
+        Literal["basic", "bearer", "api_key_headers", "oauth2_client_credentials", "other"]
+    ] = Field(
+        description="How server-side API requests authenticate: basic (key id and secret as "
+        "HTTP Basic auth), bearer (a secret token in Authorization), api_key_headers (the key "
+        "id and the secret each in their own custom header)"
     )
     amount_unit: Cited[Literal["minor_unit", "major_unit"]] = Field(
         description="minor_unit: amounts are integers in the smallest currency unit "
@@ -157,7 +163,7 @@ class Refunds(Section):
 class Webhooks(Section):
     TITLE = "webhooks"
     GOAL = "how webhook deliveries are signed, identified and ordered"
-    VERBATIM = frozenset({"signature_header", "event_id_header"})
+    VERBATIM = frozenset({"signature_header", "event_id_header", "timestamp_header"})
 
     signature_header: Cited[Identifier] = Field(
         description="Exact name of the HTTP header carrying the webhook signature"
@@ -187,6 +193,16 @@ class Webhooks(Section):
     )
     duplicate_deliveries: Cited[bool] = Field(
         description="true if the same event can be delivered more than once"
+    )
+    # Added later; the defaults keep earlier cards loadable.
+    timestamp_header: Cited[Identifier] = Field(
+        default_factory=lambda: Cited(value=None, citations=[]),
+        description="Header with the delivery timestamp that is part of the signed message "
+        "(timestamped signatures); null if there is none",
+    )
+    signature_encoding: Cited[Literal["hex", "base64"]] = Field(
+        default_factory=lambda: Cited(value=None, citations=[]),
+        description="How the HMAC digest is written in the signature header",
     )
 
 
@@ -277,6 +293,30 @@ class ApiKeys(Section):
     )
 
 
+class AuthHeaders(Section):
+    TITLE = "auth_headers"
+    GOAL = "the custom headers that carry the API credentials, and any required version header"
+    USES = ("basics.auth_scheme",)
+    ONLY_IF = ("basics.auth_scheme", "api_key_headers")
+    VERBATIM = frozenset({"key_id_header", "secret_header", "version_header", "api_version"})
+    HINTS = (
+        "Only for api_key_headers auth (null otherwise). Copy header names and the version "
+        "value exactly as a request sample or the API reference writes them."
+    )
+
+    key_id_header: Cited[Identifier] = Field(
+        description="Header that carries the key id / client id / app id"
+    )
+    secret_header: Cited[Identifier] = Field(description="Header that carries the secret key")
+    version_header: Cited[Identifier] = Field(
+        description="Header every request must send to pick the API version; null if none"
+    )
+    api_version: Cited[Identifier] = Field(
+        description="The API version value to send in version_header (the current one the "
+        "docs use); null if there is no version header"
+    )
+
+
 class ErrorShape(Section):
     TITLE = "error_shape"
     GOAL = (
@@ -348,6 +388,7 @@ INTEGRATION_SECTIONS: tuple[type[Section], ...] = (
     Endpoints,
     IdFormats,
     ApiKeys,
+    AuthHeaders,
     ErrorShape,
     CheckoutReturn,
 )
@@ -367,6 +408,7 @@ class SpecCard(BaseModel):
     endpoints: Endpoints | None = None
     ids: IdFormats | None = None
     api_keys: ApiKeys | None = None
+    auth_headers: AuthHeaders | None = None
     error_shape: ErrorShape | None = None
     checkout_return: CheckoutReturn | None = None
 

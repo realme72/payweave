@@ -485,10 +485,15 @@ async def extract_card(
         if out_of_budget:
             results.append(SectionResult(cls.TITLE, None, problems=[out_of_budget]))
             continue
-        log(f"[{cls.TITLE}]")
         facts = dict(known or {}) | known_facts(
             {k: v.model_dump(mode="json") for k, v in values.items() if isinstance(v, Section)}
         )
+        if cls.ONLY_IF and facts.get(cls.ONLY_IF[0]) != cls.ONLY_IF[1]:
+            reason = f"not applicable: {cls.ONLY_IF[0]} is not {cls.ONLY_IF[1]}"
+            results.append(SectionResult(cls.TITLE, None, problems=[reason]))
+            values[cls.TITLE] = None
+            continue
+        log(f"[{cls.TITLE}]")
         result = await extract_section(llm, docs, gateway, cls, log=log, known=facts)
         if result.out_of_budget:
             out_of_budget = f"skipped: daily budget exhausted ({result.problems[0]})"

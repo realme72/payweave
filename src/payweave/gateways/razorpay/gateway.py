@@ -184,7 +184,9 @@ class RazorpayGateway:
         )
         return mapping.refund_from_entity(refund, gateway=self._name)
 
-    async def get_refund(self, gateway_refund_id: str) -> Refund:
+    async def get_refund(
+        self, gateway_refund_id: str, *, gateway_intent_id: str | None = None
+    ) -> Refund:
         _check_id(gateway_refund_id, "rfnd_", self._name)
         refund = await self._client.get(f"refunds/{gateway_refund_id}")
         return mapping.refund_from_entity(refund, gateway=self._name)

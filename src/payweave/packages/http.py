@@ -71,6 +71,7 @@ class PackageHttpClient:
         errors: Errors,
         timeout_seconds: float,
         transport: httpx.AsyncBaseTransport | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         if urlsplit(base_url).hostname not in allowed_hosts:  # the manifest checks this too
             raise ValueError("base_url host is not allowlisted")
@@ -81,7 +82,7 @@ class PackageHttpClient:
             auth=auth,
             timeout=timeout_seconds,
             transport=transport,
-            headers={"Accept": "application/json", "User-Agent": "payweave"},
+            headers={**(headers or {}), "Accept": "application/json", "User-Agent": "payweave"},
             follow_redirects=False,
         )
 

@@ -132,11 +132,57 @@ def observed_prefix(env_name: str | None) -> str | None:
     return prefix
 
 
-def compile_draft(gateway: str, paths: list[Path], test_key_env: str | None = None) -> int:
+def observed_on(env_name: str | None) -> str:
+    """Which credential the observed key is: a *_SECRET* variable holds the secret."""
+    return "secret_key" if env_name and "SECRET" in env_name.upper() else "key_id"
+
+
+def probe_errors(
+    manifest: dict[str, Any], sandbox_url: str, key_id_env: str | None, secret_env: str | None
+) -> Any:
+    """Ask the sandbox how its error bodies look (verify/error_probe.py)."""
+    from payweave.packages.manifest import Manifest  # noqa: PLC0415
+    from payweave.verify.error_probe import probe_error_shape  # noqa: PLC0415
+
+    m = Manifest.model_validate(manifest)
+    credentials = {
+        name: os.environ.get(env or "", "")
+        for name, env in ((m.auth.username, key_id_env), (m.auth.password, secret_env))
+        if name
+    }
+    seen, log = asyncio.run(probe_error_shape(m, credentials, base_url=sandbox_url))
+    print("sandbox error probe:")
+    print("\n".join(f"  {line}" for line in log))
+    for path, values in seen.evidence.items():
+        print(f"  {path}: {values}")
+    return seen
+
+
+def compile_draft(
+    gateway: str,
+    paths: list[Path],
+    test_key_env: str | None = None,
+    *,
+    sandbox_url: str | None = None,
+    key_id_env: str | None = None,
+    secret_env: str | None = None,
+) -> int:
     from payweave.agent.manifest_compiler import compile_manifest  # noqa: PLC0415
 
     card = checked_card(gateway, paths)
-    out = compile_manifest(card, observed_test_key_prefix=observed_prefix(test_key_env))
+
+    def compile_(observed: Any = None) -> Any:
+        return compile_manifest(
+            card,
+            observed_test_key_prefix=observed_prefix(test_key_env),
+            observed_on=observed_on(test_key_env),
+            observed_errors=observed,
+        )
+
+    out = compile_()
+    if sandbox_url:
+        # Compile once from the card, ask the sandbox, then compile again with what it showed.
+        out = compile_(probe_errors(out.manifest, sandbox_url, key_id_env, secret_env))
     draft = DRAFTS / gateway / f"{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     draft.mkdir(parents=True)
     (draft / "manifest.toml").write_text(out.toml())
@@ -207,6 +253,7 @@ async def run_build(
             "gateway": gateway,
             "card": card or {"gateway": gateway},
             "observed_test_key_prefix": observed_prefix(test_key_env),
+            "observed_test_key_on": observed_on(test_key_env),
         }
         if missing:
             from payweave.knowledge.embedder import FastEmbedEmbedder  # noqa: PLC0415
@@ -368,7 +415,17 @@ def main() -> None:
     p_man = sub.add_parser("manifest", help="compile spec-card runs into a draft manifest.toml")
     p_man.add_argument("gateway")
     p_man.add_argument("cards", nargs="+", type=Path)
-    p_man.add_argument("--test-key-env", help="env var holding the sandbox key id (prefix only)")
+    p_man.add_argument(
+        "--test-key-env",
+        help="env var holding a sandbox key (prefix only; a *SECRET* name means the secret)",
+    )
+    p_man.add_argument(
+        "--probe-sandbox",
+        metavar="URL",
+        help="sandbox base URL: learn the error shape from harmless failing requests",
+    )
+    p_man.add_argument("--key-id-env", help="env var with the sandbox key id (for the probe)")
+    p_man.add_argument("--secret-env", help="env var with the sandbox secret (for the probe)")
     p_build = sub.add_parser("build", help="run the integration workflow (pauses for review)")
     p_build.add_argument("gateway")
     p_build.add_argument(
@@ -380,7 +437,10 @@ def main() -> None:
     )
     p_build.add_argument("--provider", choices=sorted(PRESETS), default=DEFAULT_PROVIDER)
     p_build.add_argument("--model")
-    p_build.add_argument("--test-key-env", help="env var holding the sandbox key id (prefix only)")
+    p_build.add_argument(
+        "--test-key-env",
+        help="env var holding a sandbox key (prefix only; a *SECRET* name means the secret)",
+    )
     p_review = sub.add_parser("review-card", help="confirm or reject a paused run's card")
     p_review.add_argument("thread")
     p_review.add_argument("--provider", choices=sorted(PRESETS), default=DEFAULT_PROVIDER)
@@ -409,7 +469,16 @@ def main() -> None:
             asyncio.run(review_card(args.thread, args.provider, args.model, args.settings_from))
         )
     if args.command == "manifest":
-        raise SystemExit(compile_draft(args.gateway, args.cards, args.test_key_env))
+        raise SystemExit(
+            compile_draft(
+                args.gateway,
+                args.cards,
+                args.test_key_env,
+                sandbox_url=args.probe_sandbox,
+                key_id_env=args.key_id_env,
+                secret_env=args.secret_env,
+            )
+        )
     if args.command == "spec-card":
         asyncio.run(
             run_spec_card(args.gateway, args.provider, args.model, args.section, args.known)

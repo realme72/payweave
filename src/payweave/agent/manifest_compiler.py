@@ -20,8 +20,10 @@ from pydantic import ValidationError
 
 from payweave.agent.spec_card import Cited, SpecCard
 from payweave.packages.manifest import Manifest
+from payweave.verify.error_probe import ErrorShapeObserved
 
 # Our credential names per auth scheme (PayWeave's choice, not the gateway's).
+# api_key_headers uses the basic names: a key id and its secret.
 BASIC_USER, BASIC_SECRET, BEARER_SECRET = "key_id", "key_secret", "secret_key"
 WEBHOOK_SECRETS = "webhook_secrets"
 _PLACEHOLDER = re.compile(r":[A-Za-z_]\w*|\{[A-Za-z_]\w*\}")
@@ -66,20 +68,58 @@ def _id_pattern(example: str) -> str:
     return f"^{re.escape(prefix)}[A-Za-z0-9]+$"
 
 
-def _relative_path(endpoint: str, base_path: str, placeholder: str | None) -> str | None:
-    """'POST /v1/orders/:id/payments' -> 'orders/{intent_id}/payments' (None if it can't)."""
+def _role(slot: str, default: str, intent_object: str | None) -> str:
+    """Which id a path placeholder holds: by its name (`{refund_id}`, `{order_id}` when
+    the intent is an order, `{payment_id}`), or the operation's default for a bare `:id`."""
+    name = slot.strip(":{}").lower()
+    if "refund" in name:
+        return "refund_id"
+    if (intent_object and intent_object.lower() in name) or "intent" in name:
+        return "intent_id"
+    if "payment" in name or "attempt" in name:
+        return "attempt_id"
+    return default
+
+
+def _relative_path(
+    endpoint: str,
+    base_path: str,
+    placeholder: str | None,
+    *,
+    relative: bool = False,
+    intent_object: str | None = None,
+) -> str | None:
+    """'POST /v1/orders/:id/payments' -> 'orders/{intent_id}/payments' (None if it can't).
+
+    ``relative``: the docs write paths relative to the base URL (Cashfree: base .../pg,
+    path /orders). ``placeholder`` is the id a bare ``:id`` means; named placeholders
+    keep their own role, so ``/orders/{order_id}/refunds`` is ``{intent_id}``.
+    """
     path = endpoint.split(" ", 1)[1]
-    if not path.startswith(base_path + "/"):
+    if relative:
+        rel = path.lstrip("/").rstrip("/")
+    elif path.startswith(base_path + "/"):
+        rel = path[len(base_path) + 1 :].rstrip("/")
+    else:
         return None
-    rel = path[len(base_path) + 1 :].rstrip("/")
     slots = _PLACEHOLDER.findall(rel)
-    if len(slots) != (0 if placeholder is None else 1):
+    if placeholder is None:
+        return None if slots else rel
+    roles = [_role(s, placeholder, intent_object) for s in slots]
+    if not slots or len(set(roles)) != len(roles):
         return None
-    return _PLACEHOLDER.sub("{" + placeholder + "}", rel) if placeholder else rel
+    for slot, role in zip(slots, roles, strict=True):
+        rel = rel.replace(slot, "{" + role + "}", 1)
+    return rel
 
 
 def compile_manifest(  # noqa: PLR0912, PLR0915
-    card: SpecCard, *, version: str = "1", observed_test_key_prefix: str | None = None
+    card: SpecCard,
+    *,
+    version: str = "1",
+    observed_test_key_prefix: str | None = None,
+    observed_on: str = "key_id",  # which credential the observed prefix came from
+    observed_errors: ErrorShapeObserved | None = None,  # from the sandbox; wins over the card
 ) -> Compiled:
     b = _Builder(card)
     out = b.out
@@ -102,6 +142,25 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
     elif scheme == "bearer":
         m["auth"] = {"scheme": "bearer", "password": BEARER_SECRET}
         credentials[BEARER_SECRET] = {"secret": True}
+    elif scheme == "api_key_headers":
+        id_header = b.fact("auth_headers", "key_id_header", "auth.username_header")
+        secret_header = b.fact("auth_headers", "secret_header", "auth.password_header")
+        if id_header and secret_header:
+            m["auth"] = {
+                "scheme": "api_key_headers",
+                "username": BASIC_USER,
+                "password": BASIC_SECRET,
+                "username_header": id_header,
+                "password_header": secret_header,
+            }
+            credentials[BASIC_USER] = {"public": True}
+            credentials[BASIC_SECRET] = {"secret": True}
+        version_header = b.fact("auth_headers", "version_header", "api.headers", required=False)
+        version = b.fact("auth_headers", "api_version", "api.headers", required=False)
+        if version_header and version and "api" in m:
+            m["api"]["headers"] = {version_header: version}
+        elif version_header:
+            out.gaps.append(f"api.headers: {version_header} needs auth_headers.api_version")
     elif scheme is not None:
         out.gaps.append(f"auth.scheme: {scheme!r} needs a hand-written auth scheme first")
 
@@ -110,13 +169,13 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
     prefixed = b.fact("api_keys", "prefixed_key", "live_guard", required=False)
     if test_prefix is None and observed_test_key_prefix:
         # Not in the docs: taken from the test key a person configured for the sandbox.
-        test_prefix, prefixed = observed_test_key_prefix, prefixed or "key_id"
+        test_prefix, prefixed = observed_test_key_prefix, prefixed or observed_on
         out.provenance["live_guard"] = [
             {"ref": "observed:configured-test-key", "quote": f"test key starts {test_prefix}"}
         ]
     holder = {
         "key_id": BASIC_USER,
-        "secret_key": BASIC_SECRET if scheme == "basic" else BEARER_SECRET,
+        "secret_key": BEARER_SECRET if scheme == "bearer" else BASIC_SECRET,
     }
     holder_name = holder.get(prefixed or "")
     if holder_name in credentials and (test_prefix or live_prefix):
@@ -151,6 +210,17 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
 
     # --- operations ---
     ops: dict[str, Any] = {}
+    # Docs either repeat the base path in every endpoint (Razorpay: /v1/orders) or write
+    # paths relative to the base URL (Cashfree: base .../pg, path /orders). Decide from
+    # all of them together: a mix means something is off and stays a gap.
+    cited = card.endpoints.cited_fields().values() if card.endpoints is not None else ()
+    documented = [f.value.split(" ", 1)[1] for f in cited if f.value]
+    relative = bool(base_path and documented) and not any(
+        p.startswith(base_path + "/") for p in documented
+    )
+    if relative:
+        out.notes.append(f"endpoint paths are documented relative to the base URL ({base_path})")
+    intent_object = card.payment_flow.intent_object.value if card.payment_flow is not None else None
 
     def endpoint(
         name: str, used_for: str, placeholder: str | None, *, required: bool = True
@@ -158,11 +228,13 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
         value = b.fact("endpoints", name, used_for, required=required)
         if value is None:
             return None
-        rel = _relative_path(value, base_path, placeholder)
+        rel = _relative_path(
+            value, base_path, placeholder, relative=relative, intent_object=intent_object
+        )
         if rel is None:
             out.gaps.append(
                 f"{used_for}: can't place {value!r} under base path {base_path!r} "
-                f"with exactly {'one id' if placeholder else 'no ids'}"
+                f"with {'its ids' if placeholder else 'no ids'}"
             )
             return None
         return {"method": value.split(" ", 1)[0], "path": rel}
@@ -210,6 +282,8 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
         b.fact("error_shape", "code_path", "errors.code_paths"),
     ]
     errors["code_paths"] = [c for c in codes if c]
+    if observed_errors is not None:
+        _apply_observed_errors(out, errors, codes, observed_errors)
     conflict = b.fact("error_shape", "idempotency_conflict_message", "errors.rules", required=False)
     if conflict:
         errors["rules"] = [{"category": "duplicate_request", "message_contains": conflict}]
@@ -218,21 +292,40 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
     # --- webhooks ---
     if card.webhooks is not None:
         algorithm = b.fact("webhooks", "signature_algorithm", "webhooks.scheme")
-        secret = b.fact("webhooks", "signing_secret", "webhooks.secrets_credential")
+        signer = b.fact("webhooks", "signing_secret", "webhooks.secrets_credential")
         header = b.fact("webhooks", "signature_header", "webhooks.signature_header")
         event_id = b.fact("webhooks", "event_id_header", "webhooks.event_id_header")
-        if algorithm not in (None, "hmac_sha256_hex"):
+        hooks: dict[str, Any] = {}
+        if algorithm == "hmac_sha256_hex":
+            hooks["scheme"] = algorithm
+        elif algorithm == "timestamped_hmac_sha256":
+            encoding = b.fact("webhooks", "signature_encoding", "webhooks.scheme")
+            stamp = b.fact("webhooks", "timestamp_header", "webhooks.timestamp_header")
+            if encoding == "base64" and stamp:
+                hooks |= {"scheme": "timestamped_hmac_sha256_base64", "timestamp_header": stamp}
+            elif encoding == "hex":
+                out.gaps.append("webhooks.scheme: timestamped hex needs a hand-written scheme")
+        elif algorithm is not None:
             out.gaps.append(f"webhooks.scheme: {algorithm!r} needs a hand-written scheme first")
-        elif secret not in (None, "webhook_secret"):
-            out.gaps.append(f"webhooks: signed with {secret!r}; only webhook_secret is supported")
-        elif algorithm and header and event_id:
+        if signer == "webhook_secret":
             credentials[WEBHOOK_SECRETS] = {"secret": True, "multiple": True, "required": False}
+            hooks["secrets_credential"] = WEBHOOK_SECRETS
+        elif signer == "api_key_secret" and m.get("auth", {}).get("password"):
+            hooks["secrets_credential"] = m["auth"]["password"]  # signed with the API secret
+            out.notes.append("webhooks are signed with the API secret: rotating it rotates both")
+        elif signer is not None:
+            out.gaps.append(f"webhooks: signed with {signer!r} but the auth has no such secret")
+        if "scheme" in hooks and "secrets_credential" in hooks and header and event_id:
             m["webhooks"] = {
-                "scheme": algorithm,
+                "scheme": hooks["scheme"],
                 "signature_header": header,
                 "event_id_header": event_id,
-                "secrets_credential": WEBHOOK_SECRETS,
-            }
+                "secrets_credential": hooks["secrets_credential"],
+            } | (
+                {"timestamp_header": hooks["timestamp_header"]}
+                if "timestamp_header" in hooks
+                else {}
+            )
     else:
         out.notes.append("no webhooks: the card has no webhooks section")
 
@@ -275,6 +368,30 @@ def compile_manifest(  # noqa: PLR0912, PLR0915
         except ValidationError as exc:
             out.problems = [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]
     return out
+
+
+def _apply_observed_errors(
+    out: Compiled, errors: dict[str, Any], codes: list[Any], seen: ErrorShapeObserved
+) -> None:
+    """What the sandbox showed beats a reading of the docs; each change is noted."""
+    reason, code = codes
+    observed = {
+        "message_paths": [seen.message_path],
+        "code_paths": [seen.reason_path, seen.code_path],
+    }
+    card = {"message_paths": errors.get("message_paths", []), "code_paths": [reason, code]}
+    for key, values in observed.items():
+        if None in values:
+            out.notes.append(f"errors.{key}: the sandbox didn't settle it; kept the card's")
+            continue
+        if values != card[key]:
+            out.notes.append(f"errors.{key}: card said {card[key]}, sandbox shows {values}")
+            out.gaps[:] = [g for g in out.gaps if not g.startswith(f"errors.{key}")]
+        errors[key] = values
+        out.provenance[f"errors.{key}"] = [
+            {"ref": "observed:sandbox", "quote": f"{p} = {seen.evidence.get(p or '')}"}
+            for p in values
+        ]
 
 
 _ORDER = (
@@ -337,5 +454,9 @@ def test_key_prefix(key: str) -> str | None:
 
     Only the prefix is kept; the key itself is never stored or shown.
     """
-    prefix = key[: key.rfind("_") + 1]
-    return prefix if "test" in prefix.lower().split("_") else None
+    # Cut right after the "test" segment: what follows can be secret. Cashfree's secret
+    # (cfsk_ma_test_<secret>_<more>) has underscores after it; cutting at the last one
+    # would copy part of the secret into the manifest.
+    parts = key.split("_")
+    marker = next((i for i, part in enumerate(parts[:-1]) if part.lower() == "test"), None)
+    return "_".join(parts[: marker + 1]) + "_" if marker is not None else None

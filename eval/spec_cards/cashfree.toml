@@ -10,7 +10,10 @@
 
 [basics]
 api_base_url = "https://api.cashfree.com/pg"   # sandbox: https://sandbox.cashfree.com/pg
-auth_scheme = "other"            # two headers: x-client-id + x-client-secret (OpenAPI apiKey schemes)
+# two headers: x-client-id + x-client-secret (OpenAPI apiKey schemes). "api_key_headers"
+# was added to the choices on 2026-10-15 (after the first runs) to support exactly this;
+# "other" stays correct because it was the right answer when the key was written.
+auth_scheme = ["other", "api_key_headers"]
 amount_unit = "major_unit"       # order_amount is a number, e.g. 10.01 (rupees)
 
 [payment_flow]
@@ -34,6 +37,9 @@ signing_secret = "api_key_secret"                 # the PG client secret, not a 
 event_id_header = "x-idempotency-key"   # sample headers; the overview prose says x-idempotency-header
 ordered_delivery = false         # retries can arrive FAILED -> PENDING -> SUCCESS
 duplicate_deliveries = true      # "at-least-once delivery"
+# Fields added 2026-10-15, answers written before their first run:
+timestamp_header = "x-webhook-timestamp"
+signature_encoding = "base64"    # Base64Encode(HMACSHA256(timestamp + rawBody, secret))
 
 [errors]
 # The errors page's "Error structure" lists error_code / error_reason (the payment's
@@ -42,6 +48,13 @@ error_code_field = ["error_code", "type"]
 reason_field = ["error_reason", "code"]
 
 # --- integration facts (compiled into manifest.toml) ---
+
+# Section added 2026-10-15; these answers were written before its first run.
+[auth_headers]
+key_id_header = "x-client-id"
+secret_header = "x-client-secret"
+version_header = "x-api-version"
+api_version = "2026-01-01"
 
 [endpoints]
 # Placeholders compare loosely ({order_id} == :id). Capture and refund go through the

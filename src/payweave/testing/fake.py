@@ -213,7 +213,9 @@ class FakeGateway:
         self._refund_keys[request.idempotency_key] = (fingerprint, refund)
         return refund
 
-    async def get_refund(self, gateway_refund_id: str) -> Refund:
+    async def get_refund(
+        self, gateway_refund_id: str, *, gateway_intent_id: str | None = None
+    ) -> Refund:
         try:
             return self._refunds[gateway_refund_id][1]
         except KeyError:

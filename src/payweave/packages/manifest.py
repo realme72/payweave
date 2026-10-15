@@ -15,11 +15,17 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from payweave.packages.schemes import AuthScheme, SignatureScheme
+from payweave.packages.schemes import AuthScheme, SignatureScheme, is_timestamped
 
 Name = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
 HeaderName = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,99}$")]
 PLACEHOLDERS = frozenset({"intent_id", "attempt_id", "refund_id"})
+# Fixed request headers (e.g. an API version) are constants, never credentials.
+HeaderValue = Annotated[str, Field(pattern=r"^[A-Za-z0-9._:-]{1,100}$")]
+# Headers a manifest may not set as constants: auth and transport are PayWeave's.
+_RESERVED_HEADERS = frozenset(
+    {"authorization", "cookie", "host", "content-length", "content-type", "accept", "user-agent"}
+)
 
 ErrorCategory = Literal[
     "invalid_request",
@@ -77,6 +83,7 @@ class Api(_Strict):
     base_url: str
     # Hosts a human confirmed from the docs (spec card). Requests go nowhere else.
     allowed_hosts: tuple[str, ...] = Field(min_length=1)
+    headers: dict[HeaderName, HeaderValue] = Field(default_factory=dict)  # sent on every request
 
     @model_validator(mode="after")
     def _check(self) -> Self:
@@ -89,18 +96,31 @@ class Api(_Strict):
             raise ValueError("base_url must not carry a query, fragment or credentials")
         if not self.base_url.endswith("/"):
             raise ValueError("base_url must end with '/'")
+        if reserved := {h.lower() for h in self.headers} & _RESERVED_HEADERS:
+            raise ValueError(f"api.headers may not set {sorted(reserved)}")
         return self
 
 
 class Auth(_Strict):
     scheme: AuthScheme
     username: Name | None = None  # credential names
-    password: Name  # the secret: basic password or bearer token
+    password: Name  # the secret: basic password, bearer token or API secret
+    # api_key_headers only: the headers that carry the username (key id) and password.
+    username_header: HeaderName | None = None
+    password_header: HeaderName | None = None
 
     @model_validator(mode="after")
     def _check(self) -> Self:
-        if (self.scheme == "basic") != (self.username is not None):
-            raise ValueError("basic auth needs a username credential; bearer must not have one")
+        headers = (self.username_header, self.password_header)
+        if (self.scheme == "bearer") != (self.username is None):
+            raise ValueError("basic and api_key_headers need a username credential; bearer can't")
+        wanted = self.scheme == "api_key_headers"
+        if (wanted and None in headers) or (not wanted and headers != (None, None)):
+            raise ValueError("api_key_headers needs both header names; other schemes take none")
+        if self.scheme == "api_key_headers":
+            names = {h.lower() for h in headers if h}
+            if len(names) != 2 or names & _RESERVED_HEADERS:
+                raise ValueError("auth headers must be two different, non-reserved headers")
         return self
 
 
@@ -190,11 +210,12 @@ class Operations(_Strict):
 
     @model_validator(mode="after")
     def _check(self) -> Self:
+        # Some gateways act through the intent (Cashfree: /orders/{order_id}/refunds).
         expected = {
             "create_payment": frozenset(),
-            "capture": frozenset({"attempt_id"}),
-            "refund": frozenset({"attempt_id"}),
-            "get_refund": frozenset({"refund_id"}),
+            "capture": frozenset({"attempt_id", "intent_id"}),
+            "refund": frozenset({"attempt_id", "intent_id"}),
+            "get_refund": frozenset({"refund_id", "intent_id"}),
         }
         for op, allowed in expected.items():
             req = getattr(self, op)
@@ -238,6 +259,15 @@ class Webhooks(_Strict):
     signature_header: HeaderName
     event_id_header: HeaderName
     secrets_credential: Name
+    # Timestamped schemes: where the signed timestamp is, and how old a delivery may be.
+    timestamp_header: HeaderName | None = None
+    max_age_seconds: int = Field(default=300, ge=30, le=86_400)
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if is_timestamped(self.scheme) != (self.timestamp_header is not None):
+            raise ValueError("timestamped schemes need timestamp_header; others take none")
+        return self
 
 
 class CheckoutReturn(_Strict):
@@ -291,12 +321,22 @@ class Manifest(_Strict):
             raise ValueError("auth.password must be a secret credential")
         if self.auth.username is not None:
             credential(self.auth.username, "auth.username")
+        auth_headers = {
+            h.lower() for h in (self.auth.username_header, self.auth.password_header) if h
+        }
+        if auth_headers & {h.lower() for h in self.api.headers}:
+            raise ValueError("api.headers must not set the auth headers")
         if self.live_guard is not None:
             credential(self.live_guard.credential, "live_guard.credential")
         if self.webhooks is not None:
-            c = credential(self.webhooks.secrets_credential, "webhooks.secrets_credential")
-            if not (c.secret and c.multiple and not c.required):
-                raise ValueError("webhook secrets must be an optional, multiple, secret credential")
+            name = self.webhooks.secrets_credential
+            c = credential(name, "webhooks.secrets_credential")
+            # Either dedicated webhook secrets, or (Cashfree) the API secret itself.
+            if name != self.auth.password and not (c.secret and c.multiple and not c.required):
+                raise ValueError(
+                    "webhook secrets must be an optional, multiple, secret credential "
+                    "or the auth secret"
+                )
         if self.checkout_return is not None:
             cr = self.checkout_return
             if not credential(cr.key_credential, "checkout_return.key_credential").secret:

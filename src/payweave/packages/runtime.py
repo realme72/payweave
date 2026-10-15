@@ -223,6 +223,7 @@ class PackageGateway:
         self._m = m
         self._config = config
         self._name = context.name
+        self._clock = context.clock
         self._settings = {name: getattr(config, name) for name in m.settings}
         self._ctx = MapperContext(
             gateway=context.name,
@@ -240,7 +241,10 @@ class PackageGateway:
                 m.auth.scheme,
                 username=str(getattr(config, m.auth.username)) if m.auth.username else "",
                 password=_secret(getattr(config, m.auth.password)),
+                username_header=m.auth.username_header or "",
+                password_header=m.auth.password_header or "",
             ),
+            headers=m.api.headers,
             errors=m.errors,
             timeout_seconds=float(getattr(config, "timeout_seconds")),  # noqa: B009
             transport=context.http_transport,
@@ -322,7 +326,7 @@ class PackageGateway:
         if amount.currency != attempt.amount.currency or amount > attempt.amount:
             raise InvalidAmountError(f"capture {amount} must be <= authorized {attempt.amount}")
         body = self._call("capture_body", attempt, amount)
-        ids = {"attempt_id": self._checked_id(attempt.gateway_attempt_id, self._m.ids.attempt)}
+        ids = self._attempt_ids(intent.gateway_intent_id, attempt)
         await self._send(op, ids=ids, body=self._json_body(body, "capture_body"))
         return await self.get_payment(request.gateway_intent_id)
 
@@ -341,16 +345,25 @@ class PackageGateway:
             raise UnsupportedCapabilityError(self._name, Capability.PARTIAL_REFUND)
         self._check_amount(amount)
         body = self._call("refund_body", amount, request.reason)
-        ids = {"attempt_id": self._checked_id(attempt.gateway_attempt_id, self._m.ids.attempt)}
+        ids = self._attempt_ids(intent.gateway_intent_id, attempt)
         headers = {op.idempotency_header: request.idempotency_key} if op.idempotency_header else {}
         entity = await self._send(
             op, ids=ids, body=self._json_body(body, "refund_body"), headers=headers
         )
         return cast(Refund, self._call("refund", entity, self._ctx))
 
-    async def get_refund(self, gateway_refund_id: str) -> Refund:
+    async def get_refund(
+        self, gateway_refund_id: str, *, gateway_intent_id: str | None = None
+    ) -> Refund:
         op = self._need(self._m.operations.get_refund, Capability.GET_REFUND)
         ids = {"refund_id": self._checked_id(gateway_refund_id, self._m.ids.refund)}
+        if "intent_id" in op.placeholders():
+            if gateway_intent_id is None:
+                raise InvalidRequestError(
+                    f"{self._m.gateway} looks refunds up by intent: pass gateway_intent_id",
+                    gateway=self._name,
+                )
+            ids["intent_id"] = self._checked_id(gateway_intent_id, self._m.ids.intent)
         entity = await self._send(op, ids=ids)
         return cast(Refund, self._call("refund", entity, self._ctx))
 
@@ -363,7 +376,15 @@ class PackageGateway:
             raise UnsupportedCapabilityError(self._name, Capability.WEBHOOKS)
         lower = {k.lower(): v for k, v in headers.items()}
         signature = lower.get(hooks.signature_header.lower())
-        if not signature or not verify_signature(hooks.scheme, raw_body, signature, secrets):
+        message = raw_body
+        if hooks.timestamp_header is not None:
+            stamp = lower.get(hooks.timestamp_header.lower(), "")
+            if not self._fresh(stamp, hooks.max_age_seconds):
+                raise InvalidSignatureError(
+                    "webhook timestamp missing or too old", gateway=self._name
+                )
+            message = stamp.encode() + raw_body
+        if not signature or not verify_signature(hooks.scheme, message, signature, secrets):
             raise InvalidSignatureError("webhook signature did not verify", gateway=self._name)
         # Only parse after the signature check passed.
         event_id = lower.get(hooks.event_id_header.lower())
@@ -404,7 +425,16 @@ class PackageGateway:
         hooks = self._m.webhooks
         if hooks is None:
             return []
-        return [_secret(s) for s in getattr(self._config, hooks.secrets_credential) or ()]
+        value = getattr(self._config, hooks.secrets_credential)
+        values = value if isinstance(value, tuple) else (value,) if value else ()
+        return [_secret(s) for s in values]
+
+    def _fresh(self, stamp: str, max_age: int) -> bool:
+        """A signed timestamp within ``max_age`` of now (seconds or milliseconds)."""
+        if not stamp.isdigit():
+            return False
+        seconds = int(stamp) / (1000 if len(stamp) > 11 else 1)
+        return abs(self._clock().timestamp() - seconds) <= max_age
 
     def _call(self, mapper: str, *args: object) -> Any:
         fn = self._package.mappers.get(mapper)
@@ -428,6 +458,12 @@ class PackageGateway:
     def _check_amount(self, amount: Money) -> None:
         if problem := self._call("check_amount", amount):
             raise InvalidAmountError(str(problem))
+
+    def _attempt_ids(self, intent_id: str, attempt: PaymentAttempt) -> dict[str, str]:
+        return {
+            "intent_id": self._checked_id(intent_id, self._m.ids.intent),
+            "attempt_id": self._checked_id(attempt.gateway_attempt_id, self._m.ids.attempt),
+        }
 
     def _checked_id(self, value: str, pattern: str) -> str:
         # Ids go into URL paths: they must match the native format, and are escaped anyway.

@@ -158,7 +158,9 @@ async def refunds(r: Recorder, h: GatewayHarness) -> None:
     await get(r, h, pid, "get refunded")
     gw = h.gateway
     if first is not None and isinstance(gw, RefundReader):
-        await r.step("get refund", lambda: gw.get_refund(first.gateway_refund_id))
+        await r.step(
+            "get refund", lambda: gw.get_refund(first.gateway_refund_id, gateway_intent_id=pid)
+        )
 
 
 async def refund_before_capture(r: Recorder, h: GatewayHarness) -> None:
@@ -180,8 +182,15 @@ async def bad_inputs(r: Recorder, h: GatewayHarness) -> None:
     await get(r, h, "order_../../refunds", "path traversal id")
     await get(r, h, "not an id", "malformed id")
     if isinstance(gw, RefundReader):
-        await r.step("unknown refund", lambda: gw.get_refund(h.unknown_refund_id))
-        await r.step("malformed refund id", lambda: gw.get_refund("rfnd_x/../../y"))
+        known = h.unknown_intent_id
+        await r.step(
+            "unknown refund",
+            lambda: gw.get_refund(h.unknown_refund_id, gateway_intent_id=known),
+        )
+        await r.step(
+            "malformed refund id",
+            lambda: gw.get_refund("rfnd_x/../../y", gateway_intent_id=known),
+        )
     await capture(r, h, h.unknown_intent_id, "capture unknown")
     await refund(r, h, h.unknown_intent_id, "refund unknown", paise=None, k="rf-x")
 
